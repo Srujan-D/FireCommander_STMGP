@@ -193,7 +193,8 @@ class EnvUtilities(object):
 
                 sensed_List_copy = sensed_List.copy()
                 if len(sensed_List_copy) > 0:
-                    sensed_List_copy[0:0] = list(uni_int_sensed_list).copy()
+                    # sensed_List_copy[0:0] = list(uni_int_sensed_list).copy()
+                    sensed_List_copy = np.vstack([uni_int_sensed_list, sensed_List_copy])
                     # sensed_List = np.unique(np.array(sensed_List_copy), axis=0).tolist()
                     sensed_List = EnvUtilities.return_unique(sensed_List_copy).tolist()
                 else:

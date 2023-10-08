@@ -8,7 +8,7 @@ def rbf_kernel(x1, x2, σf=1.0, l=1.0):
 
 
 # Gaussian process posterior
-def GP_posterior(X1, y1, X2, kernel_func, σ_noise=0.0):
+def GP_posterior(X1, y1, X2, kernel_, σ_noise=0.0):
     """
     Given test points `X2`, calculate the corresponding posterior mean
     and covariance matrix for `y2` based on the training data `(X1, y1)`.
@@ -16,13 +16,13 @@ def GP_posterior(X1, y1, X2, kernel_func, σ_noise=0.0):
     Returns: `μ2, Σ2`
     """
     # Kernel of the observations
-    Σ11 = kernel_func(X1, X1)
+    Σ11 = kernel_(X1, X1)
 
     # Account for measurement noise
     Σ11 += σ_noise**2 * np.eye(len(X1))
 
     # Kernel of observations vs to-predict
-    Σ12 = kernel_func(X1, X2)
+    Σ12 = kernel_(X1, X2)
 
     # Compute (Σ11^(-1) * Σ12)^T
     try:
@@ -34,7 +34,7 @@ def GP_posterior(X1, y1, X2, kernel_func, σ_noise=0.0):
     μ2 = solved @ y1
     
     # Compute the posterior covariance
-    Σ22 = kernel_func(X2, X2)
+    Σ22 = kernel_(X2, X2)
     Σ2 = Σ22 - (solved @ Σ12)
 
     return μ2, Σ2  # mean, covariance
@@ -42,8 +42,8 @@ def GP_posterior(X1, y1, X2, kernel_func, σ_noise=0.0):
 
 
 class GP:
-    def __init__(self, kernel_func=rbf_kernel):
-        self.kernel_func = kernel_func
+    def __init__(self, kernel_=rbf_kernel):
+        self.kernel_ = kernel_
         self.σ_noises = []
         self.psi_diagonals = []
 
@@ -79,13 +79,13 @@ class GP:
         # print(psi)
 
         # Kernel of the observations
-        Σ11 = self.kernel_func(X1, X1)
+        Σ11 = self.kernel_(X1, X1)
 
         # Account for measurement noise
         Σ11 += psi
 
         # Kernel of train points vs test points
-        Σ12 = self.kernel_func(X1, X2)
+        Σ12 = self.kernel_(X1, X2)
 
         # Compute (Σ11^(-1) * Σ12)^T
         try:
@@ -97,7 +97,7 @@ class GP:
         μ2 = solved @ y1
         
         # Compute the posterior covariance
-        Σ22 = self.kernel_func(X2, X2)
+        Σ22 = self.kernel_(X2, X2)
         Σ2 = Σ22 - (solved @ Σ12)
 
         return μ2, Σ2  # mean, covariance

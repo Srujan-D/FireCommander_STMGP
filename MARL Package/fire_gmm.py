@@ -39,8 +39,8 @@ class FireCommanderExtreme(object):
 		# pars parameters
 		self.world_size = 100 if world_size is None else world_size            # world size
 		self.duration = 200 if duration is None else duration                  # numbr of steps per game
-		self.fireAreas_Num = 3 if fireAreas_Num is None else fireAreas_Num     # number of fire areas
-		self.perception_agent_num = 2 if P_agent_num is None else P_agent_num  # number of perception agents
+		self.fireAreas_Num = 5 if fireAreas_Num is None else fireAreas_Num     # number of fire areas
+		self.perception_agent_num = 3 if P_agent_num is None else P_agent_num  # number of perception agents
 		self.action_agent_num = 0 if A_agent_num is None else A_agent_num      # number of action agents
 
 		# fire model parameters
@@ -86,6 +86,8 @@ class FireCommanderExtreme(object):
 	def update_gps(self, agent1_id, agent2_id):
 		# print(self.agent_state[agent1_id][4])
 		# print(self.agent_state[agent2_id][4])
+		print("------------------")
+		print('calling mix_GPs')
 		mixed_gp = mix_GPs([self.agent_state[agent1_id][4], self.agent_state[agent2_id][4]])
 		self.agent_state[agent1_id][4] = mixed_gp
 		self.agent_state[agent2_id][4] = mixed_gp
@@ -104,7 +106,7 @@ class FireCommanderExtreme(object):
 		#                     [int(self.world_size-10), int(self.world_size/10), 10, 1]]  # Action Agent #2
 		self.agent_state = []
 		for i in range(self.perception_agent_num):
-			self.agent_state.append([int(self.world_size-10), int(self.world_size/10), init_alt, 0, GaussianProcessRegressor(kernel=self.kernel_initial(), n_restarts_optimizer=10), False])  # Perception Agent
+			self.agent_state.append([int(self.world_size-10), int(self.world_size/10), init_alt, 0, GaussianProcessRegressor(kernel=self.kernel_initial(), n_restarts_optimizer=10, normalize_y=True), False])  # Perception Agent
 		
 		for i in range(self.action_agent_num):
 			self.agent_state.append([int(self.world_size-10), int(self.world_size/10), init_alt, 1])  # Action Agent
@@ -192,13 +194,14 @@ class FireCommanderExtreme(object):
 			self.FOV_list.append(FOV)
 			if len(self.sensed_List) > 0:
 				# GP fitting
-				print('fitting called by agent: ', i)
-				try:
-					self.agent_state[i][4].fit(np.array(self.sensed_List)[:,:2], np.array(self.sensed_List)[:,2])
-				except:
-					print('GP fitting failed')
-					print('sensed list: ', self.sensed_List)
-					break
+				# print('fitting called by agent: ', i)
+				# print('X, Y:', np.array(self.sensed_List)[:,:2]), print('intensity: ', np.array(self.sensed_List)[:,2])
+				# try:
+				self.agent_state[i][4].fit(np.array(self.sensed_List)[:,:2], np.array(self.sensed_List)[:,2])
+				# except:
+				# 	print('GP fitting failed')
+				# 	print('X, Y:', np.array(self.sensed_List)[:,:2]), print('intensity: ', np.array(self.sensed_List)[:,2])
+				# 	break
 				self.agent_state[i][5] = True
 			# compute the per-agent contribution (variation of the sensing list size)
 			self.sensed_contribution[i] += len(self.sensed_List) - sensed_num_prev
@@ -239,8 +242,8 @@ class FireCommanderExtreme(object):
 					pose2 = self.agent_state[j]
 					if Agent_Util.adjacent_agents(pose1[0:self.agent_pose_dim-1], pose2[0:self.agent_pose_dim-1], hop_num=self.comm_hop):
 						self.adjacent_agents_PnP.append([i, j])
-						if (self.agent_state[i][5] == True) and (self.agent_state[j][5] == True):
-							self.update_gps(i, j)
+						# if (self.agent_state[i][5] == True) and (self.agent_state[j][5] == True):
+						# 	self.update_gps(i, j)
 		# Perception-Action adjacency
 		for i in range(self.perception_agent_num):
 			for j in range(self.action_agent_num):
@@ -690,7 +693,7 @@ class FireCommanderExtreme(object):
 			Z = fire_contour.predict(np.c_[X.ravel(), Y.ravel()]).reshape(X.shape)
 
 			# plot the contour
-			ax[0].contour(X, Y, Z, 1, colors='green', linewidths=1)
+			ax[0].contourf(X, Y, Z) #, 1, colors='green', linewidths=1)
 
 			# plot the mean and variance of the Gaussian Process at ax[1] and ax[2]
 			
@@ -701,8 +704,8 @@ class FireCommanderExtreme(object):
 			std = std.reshape(X.shape)
 
 			# plot the mean and variance
-			ax[1].contour(X, Y, mean, 1, colors='green', linewidths=1)
-			ax[2].contour(X, Y, std, 1, colors='green', linewidths=1)
+			ax[1].contourf(X, Y, mean) #, 1, colors='green', linewidths=1)
+			ax[2].contourf(X, Y, std) #, 1, colors='green', linewidths=1)
 
 			ax[0].set_title('Fire Contour')
 			ax[1].set_title('Fire Mean')
@@ -712,9 +715,9 @@ class FireCommanderExtreme(object):
 		ax[0].scatter(self.fire_map[:, 0], self.fire_map[:, 1], c='red', s=1)
 
 		# legend
-		ax[0].legend(['Fire Contour', 'Fire Map'])
-		ax[1].legend(['Fire Mean'])
-		ax[2].legend(['Fire Variance'])
+		# ax[0].legend(['Fire Contour', 'Fire Map'])
+		# ax[1].legend(['Fire Mean'])
+		# ax[2].legend(['Fire Variance'])
 
 		# red_patch = mpatches.Patch(color='red', label='Fire')
 		# green_patch = mpatches.Patch(color='green', label='GP')
@@ -733,7 +736,7 @@ if __name__ == '__main__':
 	env.env_init()
 	
 	# go through episodes of the game
-	num_episode = 1000
+	num_episode = 500
 	for step in range(num_episode):
 		action_p = np.random.randint(0, 6, 2)  # Perception agent action generator, using randint now
 		action_a = np.random.randint(0, 5, 2)  # Action agent action generator, using randint now
