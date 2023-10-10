@@ -103,16 +103,11 @@ class EnvUtilities(object):
             raise ValueError(">>> Oops! Agent coordinates must be in either 2D or 3D.")
 
         return adjacent_agents
-
-
-
     
     @staticmethod
     def return_unique(raw_sensed_list):
         # return the unique elements in the list, where the elements are in the form of [x, y, z]
         # if there are two elements x,y,z and x',y',z' in the list, and x=x', y=y', z>z', then [x,y,z] will be kept
-
-        # return np.array
 
         unique_list = []
         for i in range(len(raw_sensed_list)):

@@ -24,10 +24,6 @@ from FireCommander_Cmplx2_Utilities import EnvUtilities
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 from GP_mixture import mix_GPs
-import matplotlib.patches as mpatches
-
-
-from typing import List
 
 Agent_Util = EnvUtilities()
 
@@ -674,13 +670,21 @@ class FireCommanderExtreme(object):
 		# plt.ion()
 
 		# initialize the map for visualization
-		fig, ax = plt.subplots(1, 3, sharey=True, figsize=(12, 4))
-		# ax.set_xlim(0, self.world_size)
-		# ax.set_ylim(0, self.world_size)
-		ax[0].set_aspect("equal", "box")
-		ax[1].set_aspect("equal", "box")
-		ax[2].set_aspect("equal", "box")
+		fig, ax = plt.subplots(self.perception_agent_num, self.perception_agent_num, sharey=True, figsize=(12, 12))
+		# organize in 3x3 grid
+		# ax = ax.reshape(3, 3)
 
+		for i in range(self.perception_agent_num):
+			for j in range(self.perception_agent_num):
+				ax[i][j].set_aspect("equal", "box")
+		
+
+		# plot the fire propagation map which is ground truth
+		ax[0][0].scatter(self.fire_map[:, 0], self.fire_map[:, 1], c='red', s=1)
+		ax[1][0].scatter(self.fire_map[:, 0], self.fire_map[:, 1], c='red', s=1)
+		ax[2][0].scatter(self.fire_map[:, 0], self.fire_map[:, 1], c='red', s=1)
+			
+		color = ['blue', 'green', 'black']
 		# plot the fire contour for each agent
 		for i in range(self.perception_agent_num):
 			# get the fire Gaussian Process of the agent (it is GaussianProcessRegressor)
@@ -693,7 +697,7 @@ class FireCommanderExtreme(object):
 			Z = fire_contour.predict(np.c_[X.ravel(), Y.ravel()]).reshape(X.shape)
 
 			# plot the contour
-			ax[0].contourf(X, Y, Z) #, 1, colors='green', linewidths=1)
+			# ax[i].contourf(X, Y, Z) #, 1, colors='green', linewidths=1)
 
 			# plot the mean and variance of the Gaussian Process at ax[1] and ax[2]
 			
@@ -704,15 +708,22 @@ class FireCommanderExtreme(object):
 			std = std.reshape(X.shape)
 
 			# plot the mean and variance
-			ax[1].contourf(X, Y, mean) #, 1, colors='green', linewidths=1)
-			ax[2].contourf(X, Y, std) #, 1, colors='green', linewidths=1)
+			ax[i][1].contourf(X, Y, mean) #, 1, colors='green', linewidths=1)
+			ax[i][2].contourf(X, Y, std) #, 1, colors='green', linewidths=1)
 
-			ax[0].set_title('Fire Contour')
-			ax[1].set_title('Fire Mean')
-			ax[2].set_title('Fire Variance')
+			# have a reading bar on the right of the mean and variance plot about value and color
+			# fig.colorbar(ax[1].contourf(X, Y, mean), ax=ax[1])
+			# fig.colorbar(ax[2].contourf(X, Y, std), ax=ax[2])
 
-		# plot the fire propagation map which is ground truth
-		ax[0].scatter(self.fire_map[:, 0], self.fire_map[:, 1], c='red', s=1)
+			# plot the agent positions with distinct colors for each agent (self.agent[i][0] is the x coordinate of the agent, self.agent[i][1] is the y coordinate of the agent)
+			ax[i][0].scatter(self.agent_state[i][0], self.agent_state[i][1], c=color[i], s=10)
+
+
+
+			ax[i][0].set_title('Fire Contour')
+			ax[i][1].set_title('Fire Mean')
+			ax[i][2].set_title('Fire Variance')
+
 
 		# legend
 		# ax[0].legend(['Fire Contour', 'Fire Map'])
@@ -724,7 +735,7 @@ class FireCommanderExtreme(object):
 		# plt.legend(handles=[red_patch, green_patch])
 
 		# show the plot
-		plt.savefig(f'viz_gps/time_{time_passed}.jpg')
+		plt.savefig(f'viz_gps/new_run/time_{time_passed}.jpg')
 		# plt.pause(0.1)
 
 		
@@ -737,8 +748,11 @@ if __name__ == '__main__':
 	
 	# go through episodes of the game
 	num_episode = 500
+
+	profile = cProfile.Profile()
+	profile.enable()
 	for step in range(num_episode):
-		action_p = np.random.randint(0, 6, 2)  # Perception agent action generator, using randint now
+		action_p = np.random.randint(0, 6, 3)  # Perception agent action generator, using randint now
 		action_a = np.random.randint(0, 5, 2)  # Action agent action generator, using randint now
 
 		actions = list(action_p) + list(action_a)
@@ -751,13 +765,15 @@ if __name__ == '__main__':
 		state, reward, done, perception_complete, action_complete = env.env_step(actions, vert_vel=2, min_alt=5, max_alt=15, time_passed=step,
 																				 a_c_threshold=1.1, r_func='RF2')
 
-		# profile.disable()
-		# profile.print_stats(sort='time')
-
 		print(step)
 		# env.env_visualize()  # env visualizer, for debugging
 		env.visualize_map(step)  # visualize the fire contour of the perception agents
-	
+		
+		# profile.disable()
+		# profile.print_stats(sort='time')
+
+	profile.disable()
+	profile.print_stats(sort='time')
 	# Visualize the last state
 	print(reward)
 	# plt.imshow(state)
