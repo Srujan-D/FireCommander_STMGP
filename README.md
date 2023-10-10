@@ -1,6 +1,6 @@
 ## Current Progress:
 - Within _MARL Package_, Run `python SimFire.py` to visualize the active fire
-- Within _MARL Package_, Run `python fire_gmm.py` to visualize a single GP fit the sensed fire
+- Within _MARL Package_, Run `python fire_gmm.py` to visualize a single GP fit the sensed fire by all the agents
 
 ## TODO:
 - [ ] Think of Sensing model -- IR Sensor w noise for point sensing?
