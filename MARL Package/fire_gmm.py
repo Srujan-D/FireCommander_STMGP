@@ -43,8 +43,8 @@ class FireCommanderExtreme(object):
 		areas_x = np.random.randint(20, self.world_size - 20, self.fireAreas_Num)
 		areas_y = np.random.randint(20, self.world_size - 20, self.fireAreas_Num)
 		area_delays = [0] * self.fireAreas_Num
-		area_fuel_coeffs = [5] * self.fireAreas_Num
-		area_wind_speed = [5] * self.fireAreas_Num
+		area_fuel_coeffs = [10] * self.fireAreas_Num
+		area_wind_speed = [10] * self.fireAreas_Num
 		area_wind_directions = []
 		area_centers = []
 		num_firespots = []
@@ -184,23 +184,24 @@ class FireCommanderExtreme(object):
 
 		# updating the Perception agents' contribution
 		for i in range(self.perception_agent_num):
-			sensed_num_prev = len(self.sensed_List)
+			sensed_num_prev = len(self.sensed_List[i])
 			# Sensing
-			self.sensed_List, FOV = Agent_Util.fire_Sensing(self.onFire_List, self.agent_state[i], self.sensed_List, self.world_size)
+			self.sensed_List[i], FOV = Agent_Util.fire_Sensing(self.onFire_List, self.agent_state[i], self.sensed_List[i], self.world_size)
 			self.FOV_list.append(FOV)
-			if len(self.sensed_List) > 0:
+			if len(self.sensed_List[i]) > 0:
 				# GP fitting
-				# print('fitting called by agent: ', i)
+				print('fitting called by agent: ', i)
 				# print('X, Y:', np.array(self.sensed_List)[:,:2]), print('intensity: ', np.array(self.sensed_List)[:,2])
+				# print(self.agent_state[i])
 				# try:
-				self.agent_state[i][4].fit(np.array(self.sensed_List)[:,:2], np.array(self.sensed_List)[:,2])
+				self.agent_state[i][4].fit(np.array(self.sensed_List[i])[:,:2], np.array(self.sensed_List[i])[:,2])
 				# except:
 				# 	print('GP fitting failed')
-				# 	print('X, Y:', np.array(self.sensed_List)[:,:2]), print('intensity: ', np.array(self.sensed_List)[:,2])
+				# 	print('X, Y:', np.array(self.sensed_List[i])[:,:2]), print('intensity: ', np.array(self.sensed_List[i])[:,2])
 				# 	break
 				self.agent_state[i][5] = True
 			# compute the per-agent contribution (variation of the sensing list size)
-			self.sensed_contribution[i] += len(self.sensed_List) - sensed_num_prev
+			self.sensed_contribution[i] += len(self.sensed_List[i]) - sensed_num_prev
 
 		# updating the Action agents' contribution
 		for i in range(self.perception_agent_num, self.perception_agent_num + self.action_agent_num):
@@ -276,7 +277,7 @@ class FireCommanderExtreme(object):
 
 		# if all the fire fronts have been sensed, exit the environment
 		# Perception performance: (sensed + pruned) / (active + pruned)
-		self.perception_complete = (len(self.sensed_List) + len(self.pruned_List)) / (len(self.onFire_List) + len(self.pruned_List))
+		self.perception_complete = (sum(len(self.sensed_List[i]) for i in range(self.perception_agent_num)) + len(self.pruned_List)) / (len(self.onFire_List) + len(self.pruned_List))
 		# Action performance:  pruned / (active + pruned)
 		self.action_complete = len(self.pruned_List) / (len(self.onFire_List) + len(self.pruned_List))
 		# when more than 95% of firespots have been pruned, the agent wins the game
@@ -418,7 +419,9 @@ class FireCommanderExtreme(object):
 				self.state[self.agent_state[i][0]][self.agent_state[i][1]] = 5  # Action agent location index
 		# mark the sensed fire fronts
 		for i in range(len(self.sensed_List)):
-			self.state[self.sensed_List[i][0]][self.sensed_List[i][1]] = 1  # sensed firespots index
+			for j in range(len(self.sensed_List[i])):
+				self.state[self.sensed_List[i][j][0]][self.sensed_List[i][j][1]] = 1  # sensed firespots index
+			# self.state[self.sensed_List[i][0]][self.sensed_List[i][1]] = 1  # sensed firespots index
 		# mark the pruned fire fronts
 		for i in range(len(self.pruned_List)):
 			self.state[self.pruned_List[i][0]][self.pruned_List[i][1]] = 2  # pruned firespots index
@@ -579,7 +582,7 @@ class FireCommanderExtreme(object):
 
 		# the lists to store the firespots in different state, coordinates only
 		self.onFire_List = []  # the onFire_List, store the points currently on fire (sensed points included, pruned points excluded)
-		self.sensed_List = []  # the sensed_List, store the points currently on fire and have been sensed by agents
+		self.sensed_List = [[] for i in range(self.perception_agent_num)]  # the sensed_List, store the points currently on fire and have been sensed by agents
 		self.pruned_List = []  # the pruned_List, store the pruned fire spots
 
 		# keeping track of agents' contributions (e.g. number of sensed/pruned firespot by each Perception/Action agent)
@@ -735,9 +738,10 @@ class FireCommanderExtreme(object):
 		# plt.legend(handles=[red_patch, green_patch])
 
 		# show the plot
-		plt.savefig(f'viz_gps/new_run/time_{time_passed}.jpg')
+		plt.savefig(f'viz_gps/mix/time_{time_passed}.jpg')
 		# plt.pause(0.1)
 
+		plt.close()
 		
 import cProfile
 
@@ -747,7 +751,7 @@ if __name__ == '__main__':
 	env.env_init()
 	
 	# go through episodes of the game
-	num_episode = 500
+	num_episode = 200
 
 	profile = cProfile.Profile()
 	profile.enable()
@@ -772,8 +776,48 @@ if __name__ == '__main__':
 		# profile.disable()
 		# profile.print_stats(sort='time')
 
+	local_fire_maps = [env.agent_state[i][4] for i in range(env.perception_agent_num)]
+	predictor = mix_GPs(local_fire_maps)
+
+	n_test = (env.world_size//2, env.world_size//2)
+
+	# Predict points at uniform spacing to capture function
+	X_test_x = np.linspace(0, env.world_size, n_test[0])
+	X_test_y = np.linspace(0, env.world_size, n_test[1])
+	X_test_xx, X_test_yy = np.meshgrid(X_test_x, X_test_y)
+	X_test = np.vstack(np.dstack((X_test_xx, X_test_yy)))
+
+
+	# Compute posterior mean and covariance of GP mixture model
+	μ_test, σ_test = predictor(X_test)
+
+	# Visualize
+	μ_test_2D = μ_test.reshape(n_test)
+	σ_test_2D = σ_test.reshape(n_test)
+
+	fig, ax = plt.subplots(1, 3, sharey=True, figsize=(12, 4))
+	ax[0].set_aspect("equal", "box")
+	ax[1].set_aspect("equal", "box")
+	ax[2].set_aspect("equal", "box")
+
+	ax[0].set_title("Ground Truth Fire")
+	ax[0].scatter(env.fire_map[:, 0], env.fire_map[:, 1], c='red', s=1)
+
+	for i, gp in enumerate(local_fire_maps):
+		ax[0].scatter(*gp.X_train_.T, marker=".", label=f"train points {i}")
+
+	ax[0].legend(loc="lower left")
+
+	ax[1].set_title("Posterior Mean\n$\mu_{2|1}$")
+	ax[1].contourf(X_test_xx, X_test_yy, μ_test_2D)
+
+	ax[2].set_title("Posterior Variance\n$\sigma^2_{2|1}$")
+	ax[2].contourf(X_test_xx, X_test_yy, σ_test_2D)
+
+	plt.savefig('viz_gps/mix/fire_prediction.jpg')
+
 	profile.disable()
-	profile.print_stats(sort='time')
+	profile.print_stats(sort='cumtime')
 	# Visualize the last state
 	print(reward)
 	# plt.imshow(state)

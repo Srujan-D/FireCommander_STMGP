@@ -212,6 +212,7 @@ class EnvUtilities(object):
         # print(sensed_List)
         sensed_List = EnvUtilities.return_unique(sensed_List)
         return sensed_List, FOV
+        # return uni_int_sensed_list, FOV
 
     # Pruning the fire with the Action agents, if given fire spots locate within the firefighter agents' scope,
     # delete them from the onFire and sensed list, add them into the pruned list, create the pruned list with time stamp

@@ -6,7 +6,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 from typing import Dict
 import numpy as np
-
+from GP_mixture import mix_GPs
 from agent.communication_log import CommunicationLog
 
 class Agent():
@@ -23,6 +23,7 @@ class Agent():
             return σf_initial**2 * RBF(length_scale=ell_initial) + WhiteKernel(noise_level=σn_initial)
         
         self.local_fire_gp = GaussianProcessRegressor(kernel=kernel_initial(), n_restarts_optimizer=10)
+        self.fire_predictor_gp = self.local_fire_gp
         self.sensed = False
         
         self.mission_type = self.params["experiment"]["missions"]["type"]
@@ -69,6 +70,12 @@ class Agent():
         agent_id: int
     ):
         received_messages = communication_log.get_agent_messages(agent_id=agent_id)
+        self.local_fire_gp = self.mix_gp(received_messages)
 
-        
+    def mix_gp(
+        self,
+        received_messages: Dict
+    ):
+        self.fire_predictor_gp = mix_GPs(self.local_fire_gp, received_messages['local_fire_gp'])
+
     
