@@ -25,6 +25,8 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 from GP_mixture import mix_GPs
 
+import shelve
+
 Agent_Util = EnvUtilities()
 
 
@@ -194,7 +196,10 @@ class FireCommanderExtreme(object):
 				# print('X, Y:', np.array(self.sensed_List)[:,:2]), print('intensity: ', np.array(self.sensed_List)[:,2])
 				# print(self.agent_state[i])
 				# try:
-				self.agent_state[i][4].fit(np.array(self.sensed_List[i])[:,:2], np.array(self.sensed_List[i])[:,2])
+
+				# self.agent_state[i][4].fit(np.array(self.sensed_List[i])[:,:2], np.array(self.sensed_List[i])[:,2])
+
+				self.agent_state[i][4].fit(np.array([[self.sensed_List[i][0], self.sensed_List[i][1]]]), np.array([[self.sensed_List[i][2]]]))
 				# except:
 				# 	print('GP fitting failed')
 				# 	print('X, Y:', np.array(self.sensed_List[i])[:,:2]), print('intensity: ', np.array(self.sensed_List[i])[:,2])
@@ -419,8 +424,10 @@ class FireCommanderExtreme(object):
 				self.state[self.agent_state[i][0]][self.agent_state[i][1]] = 5  # Action agent location index
 		# mark the sensed fire fronts
 		for i in range(len(self.sensed_List)):
-			for j in range(len(self.sensed_List[i])):
-				self.state[self.sensed_List[i][j][0]][self.sensed_List[i][j][1]] = 1  # sensed firespots index
+			# for j in range(len(self.sensed_List[i])):
+				# self.state[self.sensed_List[i][j][0]][self.sensed_List[i][j][1]] = 1  # sensed firespots index
+			if len(self.sensed_List[i]) > 0:
+				self.state[self.sensed_List[i][0]][self.sensed_List[i][1]] = 1  # sensed firespots index
 			# self.state[self.sensed_List[i][0]][self.sensed_List[i][1]] = 1  # sensed firespots index
 		# mark the pruned fire fronts
 		for i in range(len(self.pruned_List)):
@@ -738,7 +745,7 @@ class FireCommanderExtreme(object):
 		# plt.legend(handles=[red_patch, green_patch])
 
 		# show the plot
-		plt.savefig(f'viz_gps/mix/time_{time_passed}.jpg')
+		plt.savefig(f'viz_gps/mix/iter3/time_{time_passed}.jpg')
 		# plt.pause(0.1)
 
 		plt.close()
@@ -777,9 +784,17 @@ if __name__ == '__main__':
 		# profile.print_stats(sort='time')
 
 	local_fire_maps = [env.agent_state[i][4] for i in range(env.perception_agent_num)]
+	
+	# save predictor
+	# with shelve.open('predictor') as db:
+	# 	db['local_fire_maps'] = local_fire_maps
+
 	predictor = mix_GPs(local_fire_maps)
 
-	n_test = (env.world_size//2, env.world_size//2)
+	# with shelve.open('predictor') as db:
+	# 	db['predictor'] = predictor
+
+	n_test = (env.world_size, env.world_size)
 
 	# Predict points at uniform spacing to capture function
 	X_test_x = np.linspace(0, env.world_size, n_test[0])
@@ -790,6 +805,11 @@ if __name__ == '__main__':
 
 	# Compute posterior mean and covariance of GP mixture model
 	μ_test, σ_test = predictor(X_test)
+
+	# with shelve.open('predictor') as db:
+	# 	db['μ_test'] = μ_test
+	# 	db['σ_test'] = σ_test
+	# 	db['X_test'] = X_test
 
 	# Visualize
 	μ_test_2D = μ_test.reshape(n_test)
@@ -814,7 +834,7 @@ if __name__ == '__main__':
 	ax[2].set_title("Posterior Variance\n$\sigma^2_{2|1}$")
 	ax[2].contourf(X_test_xx, X_test_yy, σ_test_2D)
 
-	plt.savefig('viz_gps/mix/fire_prediction.jpg')
+	plt.savefig('viz_gps/mix/iter3/fire_prediction.jpg')
 
 	profile.disable()
 	profile.print_stats(sort='cumtime')

@@ -125,7 +125,31 @@ class EnvUtilities(object):
                     unique_list.append(raw_sensed_list[i])
 
         return np.array(unique_list)
+
+    def return_maximum(raw_sensed_list):
+        # return the maximum element in the list, where the elements are in the form of [x, y, z]
+        # maximum is defined as the element with the largest z value
+
+        # print(raw_sensed_list)
+
+        maximum = raw_sensed_list[0]
+        if len(raw_sensed_list) == 1:
+            return maximum
         
+        for i in range(len(raw_sensed_list)):
+            try:
+                if raw_sensed_list[i][2] > maximum[2]:
+                    maximum = raw_sensed_list[i]
+            except:
+                print('raw sensed list', raw_sensed_list)
+                return raw_sensed_list
+            #     print('ele', raw_sensed_list[i])
+            #     maximum = raw_sensed_list[i]
+            #     break
+
+        # print(maximum)
+        return maximum
+    
 
     # Sense the firemap (by Perception agents)
     '''
@@ -145,6 +169,10 @@ class EnvUtilities(object):
 
         # The coordination of the lower-right corner of the agent searching scope
         (br_x, br_y) = (agent_loci[0] + agent_loci[2], agent_loci[1] + agent_loci[2])
+
+        # point sensor, FOV is just agent location
+        # (tl_x, tl_y) = (agent_loci[0], agent_loci[1])
+        # (br_x, br_y) = (agent_loci[0], agent_loci[1])
 
         # Search for the current fire map, determine whether the given fire spot locates within the searching scope
         if onFire_List.shape[0] > 0:
@@ -210,8 +238,14 @@ class EnvUtilities(object):
             FOV = np.zeros((size_x, size_y), dtype=float)
 
         # print(sensed_List)
-        sensed_List = EnvUtilities.return_unique(sensed_List)
-        return sensed_List, FOV
+        # sensed_List = EnvUtilities.return_unique(sensed_List)
+
+        # just retain maximum intensity firespot, discard all others
+        if (len(sensed_List) > 0):
+            sensed_List = EnvUtilities.return_maximum(sensed_List)
+
+            print(">>> The sensed list is: ", np.array(sensed_List))
+        return np.array(sensed_List), FOV
         # return uni_int_sensed_list, FOV
 
     # Pruning the fire with the Action agents, if given fire spots locate within the firefighter agents' scope,
