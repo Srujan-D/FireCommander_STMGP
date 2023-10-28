@@ -211,21 +211,21 @@ class Fire(object):
 		return self.fire_map[:, 0], self.fire_map[:, 1], self.fire_map[:, 2], self.fire_map[:, 3]
 	
 
-class MDN_GP_Model_Spatiotemporal(gpytorch.models.ExactGP):
-	def __init__(self, x_train, y_train):
-		super(MDN_GP_Model_Spatiotemporal, self).__init__(x_train, y_train, gpytorch.likelihoods.GaussianLikelihood())
-		self.mean_module = gpytorch.means.ConstantMean()
-		self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+# class MDN_GP_Model_Spatiotemporal(gpytorch.models.ExactGP):
+# 	def __init__(self, x_train, y_train):
+# 		super(MDN_GP_Model_Spatiotemporal, self).__init__(x_train, y_train, gpytorch.likelihoods.GaussianLikelihood())
+# 		self.mean_module = gpytorch.means.ConstantMean()
+# 		self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
 		
-	def forward(self, x):
-		mean_x = self.mean_module(x)
-		covar_x = self.covar_module(x)
-		return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+# 	def forward(self, x):
+# 		mean_x = self.mean_module(x)
+# 		covar_x = self.covar_module(x)
+# 		return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 import torch.nn.functional as F
 
 class MDN(nn.Module):
-	def __init__(self, n_hidden=100, n_gaussians=2):
+	def __init__(self, n_hidden=100, n_gaussians=5):
 		super(MDN, self).__init__()
 		self.neurons = n_hidden
 		self.components = n_gaussians
@@ -237,7 +237,7 @@ class MDN(nn.Module):
 		self.mus = nn.Linear(n_hidden, n_gaussians)
 		self.sigmas = nn.Linear(n_hidden, n_gaussians)
 
-		self.oneDivSqrtTwoPI = 1.0 / np.sqrt(2.0*np.pi)
+		self.ONEDIVSQRTTWOPI = 1.0 / np.sqrt(2.0*np.pi)
 	
 	def forward(self, inputs):
 		x = F.relu(self.h1(inputs))
@@ -245,22 +245,39 @@ class MDN(nn.Module):
 		
 		pi = torch.softmax(self.alphas(x), dim=1)
 		mu = self.mus(x)
-		sigma = torch.exp(self.sigmas(x))
 		
-		return pi, sigma, mu
-	
+		# use ELU for sigma
+		sigma = nn.ELU()(self.sigmas(x)) + 1 + 1e-15
+		
+		return pi, sigma, mu	
 	
 	def gaussian_distribution(self, y, mu, sigma):
 		# make |mu|=K copies of y, subtract mu, divide by sigma
-		result = (y.expand_as(mu) - mu) * torch.reciprocal(sigma)
-		result = -0.5 * (result * result)
-		return (torch.exp(result) * torch.reciprocal(sigma)) * self.oneDivSqrtTwoPI
+		y = y.expand_as(sigma)
+		res = (self.ONEDIVSQRTTWOPI/sigma) * torch.exp(-0.5 * (y-mu)**2 / sigma**2)
+
+		return res
 
 	def mdn_loss_fn(self, pi, sigma, mu, y):
-		result = self.gaussian_distribution(y, mu, sigma) * pi
-		result = torch.sum(result, dim=1)
-		result = -torch.log(result)
-		return torch.mean(result)
+		'''
+		use LogsumExp trick for numerical stability: https://en.wikipedia.org/wiki/LogSumExp
+		'''	
+		# sigma = torch.tensor(sigma)
+		# mu = torch.tensor(mu)
+		# pi = torch.tensor(pi)
+		result = -torch.log(sigma) - 0.5 * torch.log(2 * torch.tensor(np.pi)) - torch.pow(y - mu, 2) / (2 * torch.pow(sigma, 2))
+		result = torch.logsumexp(torch.log(pi) + result, dim=1)
+
+		# regularization
+		# mu_diff = mu.unsqueeze(2) - mu.unsqueeze(1)
+		# mu_dist = torch.norm(mu_diff, dim=1)
+		# loss_reg = torch.sum(torch.exp(-mu_dist / 0.1))
+		# alpha = 0.1
+		# loss = -torch.mean(result + alpha * loss_reg)
+
+		# return loss
+		
+		return -torch.mean(result)
 	
 	def train_mdn(self, x_variable, y_variable, optimizer):
 		for epoch in range(10001):
