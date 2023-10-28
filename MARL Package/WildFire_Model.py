@@ -41,31 +41,32 @@ class WildFire(object):
         self.flame_angle = flame_angle
 
     # initializing hotspots
-    def hotspot_init(self):
+    def hotspot_init(self, cluster_num=-1):
         """
         This function generates the initial hotspot areas
 
         :return: ignition points across the entire map
         """
 
-        ign_points_all = np.zeros(shape=[0, 2])
+        ign_points_all = np.zeros(shape=[0, 3])
         for hotspot in self.hotspot_areas:
             x_min, x_max = hotspot[0], hotspot[1]
             y_min, y_max = hotspot[2], hotspot[3]
             ign_points_x = np.random.randint(low=x_min, high=x_max, size=(self.num_ign_points, 1))
             ign_points_y = np.random.randint(low=y_min, high=y_max, size=(self.num_ign_points, 1))
-            ign_points_this_area = np.concatenate([ign_points_x, ign_points_y], axis=1)
+            # print(ign_points_x.shape, ign_points_y.shape, np.full(ign_points_x.shape, i))
+            ign_points_this_area = np.concatenate([ign_points_x, ign_points_y, np.full(ign_points_x.shape, cluster_num)], axis=1)
             ign_points_all = np.concatenate([ign_points_all, ign_points_this_area], axis=0)
 
         # computing the fire intensity
         counter = 0
-        ign_points = np.zeros(shape=[ign_points_all.shape[0], 3])
+        ign_points = np.zeros(shape=[ign_points_all.shape[0], 4])
         for point in ign_points_all:
             heat_source_diff = np.tile(point, (ign_points_all.shape[0], 1)) - ign_points_all
             heat_source_dists = np.sqrt((heat_source_diff[:, 0] ** 2) + (heat_source_diff[:, 1] ** 2))
             idx = np.where(heat_source_dists <= self.radiation_radius)[0]
             fire_intensity = self.fire_intensity(point, ign_points_all[idx.tolist(), :].tolist())
-            ign_points[counter] = np.array([point[0], point[1], fire_intensity])
+            ign_points[counter] = np.array([point[0], point[1], fire_intensity, point[2]])
 
             counter += 1
 
@@ -167,11 +168,11 @@ class WildFire(object):
             raise ValueError(">>> Oops! Fire propagation function needs ALL of its inputs to operate!")
 
         current_geo_phys_info = np.zeros(shape=[ign_points_all.shape[0], 3])
-        new_fire_front = np.zeros(shape=[ign_points_all.shape[0], 3])
+        new_fire_front = np.zeros(shape=[ign_points_all.shape[0], 4])
         counter = 0
         for point in ign_points_all:
             # extracting the data
-            x, y = point[0], point[1]
+            x, y, cluster = point[0], point[1], point[3]
             # Ensure that all the fire spots to be displayed must be within the window scope
             if ((x <= (world_Size - 1)) and (y <= (world_Size - 1)) and (x > 0) and (y > 0)):
                 spread_rate = geo_phys_info['spread_rate']
@@ -214,7 +215,7 @@ class WildFire(object):
                 fire_intensity = fire_intensity1 + fire_intensity2
 
                 # storing new fire-front locations and intensity
-                new_fire_front[counter] = np.array([x_new, y_new, fire_intensity])
+                new_fire_front[counter] = np.array([x_new, y_new, fire_intensity, cluster])
 
                 counter += 1
 

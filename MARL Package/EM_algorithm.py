@@ -6,28 +6,48 @@ def gaussian_pdf(mean, var, y):
     return scipy.stats.norm(mean, np.sqrt(var)).pdf(y)
 
 
+# def E_stage(X_train_combined, y_train_combined, GPs, P_z):
+#     """Perform the Expectation stage of the EM algorithm (returns updated `P_z`)"""
+    
+#     n = len(GPs)
+#     N = np.zeros(P_z.shape)
+
+#     # compute observation likelihoods
+#     for j, i in np.ndindex(P_z.shape):
+#         q = X_train_combined[j]
+#         y = y_train_combined[j]
+#         # TODO: determine if this is the correct computation of var
+#         # TODO: make this more efficient
+#         y_hat, var = GPs[i].query([q])
+#         N[j, i] = gaussian_pdf(y_hat, var, y)
+    
+#     # print(N)
+    
+#     # update P_z (as one batch)
+#     P_z_new = P_z.copy()
+#     for j, i in np.ndindex(P_z.shape):
+#         P_z_new[j, i] = (P_z[j, i] * N[j, i]) / sum(P_z[j, k] * N[j, k] for k in range(n))
+    
+#     return P_z_new
+
 def E_stage(X_train_combined, y_train_combined, GPs, P_z):
     """Perform the Expectation stage of the EM algorithm (returns updated `P_z`)"""
     
     n = len(GPs)
     N = np.zeros(P_z.shape)
 
-    # compute observation likelihoods
     for j, i in np.ndindex(P_z.shape):
         q = X_train_combined[j]
         y = y_train_combined[j]
-        # TODO: determine if this is the correct computation of var
-        # TODO: make this more efficient
         y_hat, var = GPs[i].query([q])
         N[j, i] = gaussian_pdf(y_hat, var, y)
+
+    # Precompute sums for efficiency
+    sums = np.sum(P_z * N, axis=1)
     
-    # print(N)
-    
-    # update P_z (as one batch)
-    P_z_new = P_z.copy()
-    for j, i in np.ndindex(P_z.shape):
-        P_z_new[j, i] = (P_z[j, i] * N[j, i]) / sum(P_z[j, k] * N[j, k] for k in range(n))
-    
+    # Update P_z (as one batch)
+    P_z_new = (P_z * N) / sums[:, np.newaxis]
+
     return P_z_new
 
 
