@@ -237,7 +237,7 @@ class MDN(nn.Module):
 		self.mus = nn.Linear(n_hidden, n_gaussians)
 		self.sigmas = nn.Linear(n_hidden, n_gaussians)
 
-		self.ONEDIVSQRTTWOPI = 1.0 / np.sqrt(2.0*np.pi)
+		self.ONEDIVSQRT2PI = 1.0 / np.sqrt(2.0*np.pi)
 	
 	def forward(self, inputs):
 		x = F.relu(self.h1(inputs))
@@ -254,19 +254,20 @@ class MDN(nn.Module):
 	def gaussian_distribution(self, y, mu, sigma):
 		# make |mu|=K copies of y, subtract mu, divide by sigma
 		y = y.expand_as(sigma)
-		res = (self.ONEDIVSQRTTWOPI/sigma) * torch.exp(-0.5 * (y-mu)**2 / sigma**2)
-
+		res = -torch.log(sigma) - 0.5 * torch.log(2 * torch.tensor(np.pi)) - 0.5 * torch.pow((y - mu) / sigma, 2)
 		return res
 
 	def mdn_loss_fn(self, pi, sigma, mu, y):
 		'''
 		use LogsumExp trick for numerical stability: https://en.wikipedia.org/wiki/LogSumExp
 		'''	
-		# sigma = torch.tensor(sigma)
-		# mu = torch.tensor(mu)
-		# pi = torch.tensor(pi)
-		result = -torch.log(sigma) - 0.5 * torch.log(2 * torch.tensor(np.pi)) - torch.pow(y - mu, 2) / (2 * torch.pow(sigma, 2))
-		result = torch.logsumexp(torch.log(pi) + result, dim=1)
+		# result = -torch.log(sigma) - 0.5 * torch.log(2 * torch.tensor(np.pi)) - torch.pow(y - mu, 2) / (2 * torch.pow(sigma, 2))
+		# result = torch.logsumexp(torch.log(pi) + result, dim=1)
+
+		log_component_prob = self.gaussian_distribution(y, mu, sigma)
+		log_mix_prob = torch.log(nn.functional.gumbel_softmax(pi, tau=1, dim=-1)) + 1e-15
+
+		result = torch.logsumexp(log_component_prob + log_mix_prob, dim=-1)
 
 		# regularization
 		# mu_diff = mu.unsqueeze(2) - mu.unsqueeze(1)
@@ -280,7 +281,7 @@ class MDN(nn.Module):
 		return -torch.mean(result)
 	
 	def train_mdn(self, x_variable, y_variable, optimizer):
-		for epoch in range(10001):
+		for epoch in range(3001):
 			pi_variable, sigma_variable, mu_variable = network(x_variable)
 			loss = self.mdn_loss_fn(pi_variable, sigma_variable, mu_variable, y_variable)
 			optimizer.zero_grad()
@@ -294,8 +295,8 @@ if __name__ == '__main__':
 	network = MDN(n_hidden=5, n_gaussians=5)
 	optimizer = torch.optim.Adam(network.parameters(), lr=0.0001, weight_decay=1e-4)
 
-	for i in tqdm(range(50)):
-		env = Fire(world_size=150, episodes=20)
+	for i in tqdm(range(100)):
+		env = Fire(world_size=150, episodes=100)
 		x, y, intensity, fire_cluster = env.generate_fire_data()
 		min_max_scaler = MinMaxScaler()
 		intensity = min_max_scaler.fit_transform(intensity.reshape(-1, 1)).reshape(-1)
@@ -322,6 +323,7 @@ if __name__ == '__main__':
 		ax[1].set_title('ground truth')
 		plt.savefig(f'results/train/mdn_{i}.png')
 		plt.close()
+		del env
 
 	torch.save(network.state_dict(), 'results/train/mdn.pt')
 
@@ -342,6 +344,8 @@ if __name__ == '__main__':
 	mu = mu.detach().numpy()
 
 	pi = np.argmax(pi, axis=1)
+
+	print('test loss: ', network.mdn_loss_fn(pi, sigma, mu, y_test).item())
 
 	fig, ax = plt.subplots(1, 2, figsize=(10, 10))
 	ax[0].scatter(x, y, c=pi, cmap='jet', s=10)
