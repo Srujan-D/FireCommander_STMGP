@@ -22,7 +22,6 @@ import numpy as np # basic math and random numbers
 import torch # package for building functions with learnable parameters
 import torch.nn as nn # prebuilt functions specific to neural networks
 from torch.autograd import Variable # storing data while learning
-from torch.utils.data import DataLoader
 
 
 # from pytorch_tabular import TabularModel
@@ -60,7 +59,7 @@ class Fire(object):
 
 		for i in range(self.fireAreas_Num):
 			area_centers.append([areas_x[i], areas_y[i]])
-			num_firespots.append(10)
+			num_firespots.append(np.random.randint(low=5, high=15, size=1)[0])
 			area_wind_directions.append(random.choice([0, 45, 90, 135, 180]))
 		self.fire_info = [area_centers,            # [[area1_center_x, area1_center_y], [area2_center_x, area2_center_y], ...],
 						  [num_firespots,          # [[num_firespots1, num_firespots2, ...],
@@ -233,7 +232,7 @@ class MDN(nn.Module):
 		self.components = n_gaussians
 		self.mu_bias = mu_bias
 		
-		self.h1 = nn.Linear(3, n_hidden)
+		self.h1 = nn.Linear(2, n_hidden)
 		self.h2 = nn.Linear(n_hidden, n_hidden)
 		
 		self.alphas = nn.Linear(n_hidden, n_gaussians)
@@ -279,7 +278,7 @@ class MDN(nn.Module):
 		log_component_prob = self.gaussian_distribution(y, mu, sigma)
 		# log_mix_prob = torch.log(nn.functional.gumbel_softmax(pi, tau=1)) + 1e-15
 		# TODO: # add 1e-15 inside the torch.log(pi + 1e-15)
-		log_mix_prob = torch.log(pi + 1e-15)
+		log_mix_prob = torch.log(pi + 1e-15) 
 		# log_mix_prob = torch.log(pi) + 1e-15 
 
 		result = torch.logsumexp(log_component_prob + log_mix_prob, dim=-1)
@@ -309,269 +308,147 @@ class MDN(nn.Module):
 			plt.savefig(f'results/train/low_loss_mdn_{i}.png')
 			plt.close()
 			plt.show()
-
-class BuildData():
-	def __init__(self, data_size=10000, world_size=250, episodes=10, fireAreas_Num=5):
-		self.world_size = world_size
-		self.episodes = episodes
-		self.fireAreas_Num = fireAreas_Num
-
-		self.env_list = []
-
-		for i in tqdm(range(data_size)):
-			env = Fire(world_size=self.world_size, episodes=self.episodes, fireAreas_Num=self.fireAreas_Num)
-			self.env_list.append(env)
-
-	def __len__(self):
-		return len(self.env_list)
 	
-	def __getitem__(self, idx):
-		env = self.env_list[idx]
-		x, y, intensity, fire_cluster, fire_cluster_means = env.generate_fire_data()
-		fire_means = []
-		for cluster in fire_cluster_means:
-			fire_means.append(np.mean(cluster, axis=0, dtype=np.int32))
-		
-		x_train = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1), intensity.reshape(-1, 1)], axis=1)
-		y_train = fire_cluster.reshape(-1, 1)
-
-		x_train = torch.tensor(x_train, dtype=torch.float32)
-		y_train = torch.tensor(y_train, dtype=torch.float32, requires_grad=False)
-		# fire_means = torch.tensor(fire_means)
-
-		if not x_train.shape[0] == y_train.shape[0]:
-			print("false")
-
-		return x_train, y_train
-
-def collate_fn(batch):
-    # Find the maximum size for x_train and y_train
-    max_x_size = max(x.size(0) for x, _ in batch)
-    max_y_size = max(y.size(0) for _, y in batch)
-
-    # Initialize lists to store padded x_train and y_train
-    padded_x = []
-    padded_y = []
-
-    # Loop through the batch
-    for x, y in batch:
-        # Calculate how many times to replicate the data to match the maximum size
-        x_replicas = max_x_size // x.size(0)
-        y_replicas = max_y_size // y.size(0)
-
-        # Replicate x and y data to match the maximum size
-        x_padded = x.repeat(x_replicas, 1)
-        y_padded = y.repeat(y_replicas, 1)
-
-        # Append the replicated data to the padded lists
-        padded_x.append(x_padded)
-        padded_y.append(y_padded)
-
-    # Stack the padded data to form tensors
-    x_train = torch.stack(padded_x)
-    y_train = torch.stack(padded_y)
-
-    return x_train, y_train
-
+	
 if __name__ == '__main__':
 	network = MDN(n_hidden=20, n_gaussians=5)
 	optimizer = torch.optim.Adam(network.parameters(), lr=0.0001, weight_decay=1e-4)
 
-	train_dataset = BuildData(data_size=10000, world_size=250, episodes=10, fireAreas_Num=5)
-	train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=64, collate_fn=collate_fn)
+    # create static dataset by sampling env
+	env = Fire(world_size=250, episodes=10, fireAreas_Num=5)
+	x, y, intensity, fire_cluster, fire_cluster_means = env.generate_fire_data()
+	fire_means = []
+	for cluster in fire_cluster_means:
+		fire_means.append(np.mean(cluster, axis=0, dtype=np.int32))
 
+	# min_max_scaler = MinMaxScaler()
+	# intensity = min_max_scaler.fit_transform(intensity.reshape(-1, 1)).reshape(-1)
 
-	n_epochs = 500
-	for i in tqdm(range(n_epochs)):
-		for x_train, y_train  in train_dataloader:
-			# x_train, y_train = batch
-			# print(x_train.shape, y_train.shape)
-			network.train_mdn(x_train, y_train, optimizer)
-			pi, sigma, mu = network(x_train)
+	x_train = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1), intensity.reshape(-1, 1)], axis=1)
+	x_train = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1)], axis=1)
+	y_train = fire_cluster.reshape(-1, 1)
 
-			with open('results/train/loss.txt', 'a') as f:
-				f.write(str(network.mdn_loss_fn(y_train, mu, sigma, pi).item())+'\n')
-
-			pi = pi.detach().numpy()
-			sigma = sigma.detach().numpy()
-			mu = mu.detach().numpy()
-			
-			pi1 = np.max(pi, axis=2)
-			pi2 = np.argmax(pi, axis=2)
-
-			mu1 = mu[np.indices(pi2.shape)[0], pi2]
-			sigma1 = sigma[np.indices(pi2.shape)[0], pi2]
-
-			# print(x_train.shape, pi.shape, pi1.shape)
-
-			if i%300 == 0:
-				# for j in range(32):
-				fig, ax = plt.subplots(1, 2, figsize=(20, 10))
-				ax[0].scatter(x_train[5][:,0].detach().numpy(), x_train[5][:,1].detach().numpy(), c=pi1[5], cmap='jet', s=1)
-				ax[1].scatter(x_train[5][:,0].detach().numpy(), x_train[5][:,1].detach().numpy(), c=y_train[5][:,0].detach().numpy(), cmap='viridis', s=1)
-				ax[0].set_title('prediction')
-				ax[1].set_title('ground truth')
-				plt.savefig(f'results/train/low_loss_mdn_{i}.png')
-				plt.close()
-
-				# fig, ax = plt.subplots(1, 2, figsize=(20, 10))
-				# ax[0].scatter(x_train[:,0].detach().numpy(), x_train[:,1].detach().numpy(), c=pi1, cmap='jet', s=1)
-				# ax[1].scatter(x_train[:,0].detach().numpy(), x_train[:,1].detach().numpy(), c=y_train[:,0].detach().numpy(), cmap='viridis', s=1)
-				# ax[0].set_title('prediction')
-				# ax[1].set_title('ground truth')
-				# plt.savefig(f'results/train/low_loss_mdn_{i}.png')
-				# plt.close()
-			
-
-	torch.save(network.state_dict(), 'results/train/low_loss_mdn.pt')
-
-
-		
+	x_train = torch.tensor(x_train, dtype=torch.float32)
+	y_train = torch.tensor(y_train, dtype=torch.float32, requires_grad=False)
 	
-		
-		
+	for i in tqdm(range(10000)):
 
-	
-# if __name__ == '__main__':
-# 	network = MDN(n_hidden=20, n_gaussians=5)
-# 	optimizer = torch.optim.Adam(network.parameters(), lr=0.0001, weight_decay=1e-4)
+		network.mu_bias = torch.tensor(np.array(fire_means), dtype=torch.float32)
+		network.train_mdn(x_train, y_train, optimizer)
 
-# 	for i in tqdm(range(10000)):
-# 		env = Fire(world_size=250, episodes=10, fireAreas_Num=5)
-# 		x, y, intensity, fire_cluster, fire_cluster_means = env.generate_fire_data()
-# 		fire_means = []
-# 		for cluster in fire_cluster_means:
-# 			fire_means.append(np.mean(cluster, axis=0, dtype=np.int32))
+		pi, sigma, mu = network(x_train)
+		# write loss into file
+		with open('results/train/bias/10000/mdn_loss_4.txt', 'a') as f:
+			f.write(f'{i} {network.mdn_loss_fn(y_train, mu, sigma, pi)}\n')
+		pi = pi.detach().numpy()
+		sigma = sigma.detach().numpy()
+		mu = mu.detach().numpy()
 
-# 		# min_max_scaler = MinMaxScaler()
-# 		# intensity = min_max_scaler.fit_transform(intensity.reshape(-1, 1)).reshape(-1)
+		# # plot 5 gaussian distributions
+		# if i % 300 == 0:
+		# 	fig, ax = plt.subplots(1, 5, figsize=(20, 10))
+		# 	x1 = np.linspace(0, 250, 250)
+		# 	y1 = np.linspace(0, 250, 250)
+		# 	x1, y1 = np.meshgrid(x1, y1)
 
-# 		x_train = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1), intensity.reshape(-1, 1)], axis=1)
-# 		# x_train = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1)], axis=1)
-# 		y_train = fire_cluster.reshape(-1, 1)
-
-# 		x_train = torch.tensor(x_train, dtype=torch.float32)
-# 		y_train = torch.tensor(y_train, dtype=torch.float32, requires_grad=False)
-
-# 		network.mu_bias = torch.tensor(np.array(fire_means), dtype=torch.float32)
-# 		network.train_mdn(x_train, y_train, optimizer)
-
-# 		pi, sigma, mu = network(x_train)
-# 		# write loss into file
-# 		with open('results/train/bias/10000/mdn_loss_4.txt', 'a') as f:
-# 			f.write(f'{i} {network.mdn_loss_fn(y_train, mu, sigma, pi)}\n')
-# 		pi = pi.detach().numpy()
-# 		sigma = sigma.detach().numpy()
-# 		mu = mu.detach().numpy()
-
-# 		# # plot 5 gaussian distributions
-# 		# if i % 300 == 0:
-# 		# 	fig, ax = plt.subplots(1, 5, figsize=(20, 10))
-# 		# 	x1 = np.linspace(0, 250, 250)
-# 		# 	y1 = np.linspace(0, 250, 250)
-# 		# 	x1, y1 = np.meshgrid(x1, y1)
-
-# 		# 	for j in range(5):
+		# 	for j in range(5):
 
 			
 
-# 		# print(pi.shape, sigma.shape, mu.shape)
+		# print(pi.shape, sigma.shape, mu.shape)
 
-# 		pi1 = np.max(pi, axis=1)
-# 		pi2 = np.argmax(pi, axis=1)
+		pi1 = np.max(pi, axis=1)
+		pi2 = np.argmax(pi, axis=1)
 
-# 		mu1 = mu[np.indices(pi2.shape)[0], pi2]
-# 		sigma1 = sigma[np.indices(pi2.shape)[0], pi2]
-# 		# print(x.shape, pi2.shape, mu1.shape, sigma1.shape, pi1.shape)
+		mu1 = mu[np.indices(pi2.shape)[0], pi2]
+		sigma1 = sigma[np.indices(pi2.shape)[0], pi2]
+		# print(x.shape, pi2.shape, mu1.shape, sigma1.shape, pi1.shape)
 
-# 		if i % 300 == 0:
+		if i % 300 == 0:
 
-# 			# fig, ax = plt.subplots(1, 2, figsize=(20, 10))
-# 			# ax[0].scatter(x, y, c=pi, cmap='jet', s=1)
-# 			# ax[1].scatter(x, y, c=fire_cluster, cmap='viridis', s=1)
-# 			# for i in range(len(fire_means)):
-# 			# 	ax[1].scatter(fire_means[i][0], fire_means[i][1], marker='x', c='red', s=100)
-# 			# ax[0].set_title('prediction')
-# 			# ax[1].set_title('ground truth')
-# 			# # plt.show()
-# 			# plt.savefig(f'results/train/mdn_{i}.png')
-# 			# plt.close()
+			# fig, ax = plt.subplots(1, 2, figsize=(20, 10))
+			# ax[0].scatter(x, y, c=pi, cmap='jet', s=1)
+			# ax[1].scatter(x, y, c=fire_cluster, cmap='viridis', s=1)
+			# for i in range(len(fire_means)):
+			# 	ax[1].scatter(fire_means[i][0], fire_means[i][1], marker='x', c='red', s=100)
+			# ax[0].set_title('prediction')
+			# ax[1].set_title('ground truth')
+			# # plt.show()
+			# plt.savefig(f'results/train/mdn_{i}.png')
+			# plt.close()
 
-# 			fig, ax = plt.subplots(3, 2, figsize=(20, 30))
-# 			ax[0, 0].scatter(x, y, c=pi2, cmap='jet', s=1)
-# 			ax[0, 1].scatter(x, y, c=fire_cluster, cmap='viridis', s=1)
-# 			for j in range(len(fire_means)):
-# 				ax[0, 1].scatter(fire_means[j][0], fire_means[j][1], marker='x', c='red', s=100)
-# 			ax[0, 0].set_title('prediction')
-# 			ax[0, 1].set_title('ground truth')
-# 			# print(mu.shape, pi2.shape, sigma.shape)
-# 			ax[1, 0].scatter(x, y, c=mu1, cmap='jet', s=1)
-# 			ax[1, 1].scatter(x, y, c=fire_cluster, cmap='jet', s=1)
-# 			# ax[1, 1].colorbar()
-# 			ax[1, 0].set_title('prediction mean')
-# 			ax[1, 1].set_title('ground truth')
+			fig, ax = plt.subplots(3, 2, figsize=(20, 30))
+			ax[0, 0].scatter(x, y, c=pi2, cmap='jet', s=1)
+			ax[0, 1].scatter(x, y, c=fire_cluster, cmap='viridis', s=1)
+			for j in range(len(fire_means)):
+				ax[0, 1].scatter(fire_means[j][0], fire_means[j][1], marker='x', c='red', s=100)
+			ax[0, 0].set_title('prediction')
+			ax[0, 1].set_title('ground truth')
+			# print(mu.shape, pi2.shape, sigma.shape)
+			ax[1, 0].scatter(x, y, c=mu1, cmap='jet', s=1)
+			ax[1, 1].scatter(x, y, c=fire_cluster, cmap='jet', s=1)
+			# ax[1, 1].colorbar()
+			ax[1, 0].set_title('prediction mean')
+			ax[1, 1].set_title('ground truth')
 
-# 			ax[2, 0].scatter(x, y, c=sigma1, cmap='jet', s=1)
-# 			ax[2, 0].set_title('prediction variance')
-# 			ax[2, 1].scatter(x, y, c=fire_cluster, cmap='jet', s=1)
+			ax[2, 0].scatter(x, y, c=sigma1, cmap='jet', s=1)
+			ax[2, 0].set_title('prediction variance')
+			ax[2, 1].scatter(x, y, c=fire_cluster, cmap='jet', s=1)
 
-# 			# ax[2, 0].colorbar()
-# 			ax[1, 1].scatter(x, y, c=intensity, cmap='jet', s=1)
+			# ax[2, 0].colorbar()
+			ax[1, 1].scatter(x, y, c=intensity, cmap='jet', s=1)
 
-# 			fig.colorbar(ax[2, 0].scatter(x, y, c=sigma1, cmap='jet', s=1), ax=ax[2, 0])
-# 			fig.colorbar(ax[1, 0].scatter(x, y, c=intensity, cmap='jet', s=1), ax=ax[1, 0])
-# 			# fig.colorbar(ax=ax[2, 0])
-# 			# fig.colorbar(ax=ax[1, 0])
+			fig.colorbar(ax[2, 0].scatter(x, y, c=sigma1, cmap='jet', s=1), ax=ax[2, 0])
+			fig.colorbar(ax[1, 0].scatter(x, y, c=intensity, cmap='jet', s=1), ax=ax[1, 0])
+			# fig.colorbar(ax=ax[2, 0])
+			# fig.colorbar(ax=ax[1, 0])
 
 
 			
 
-# 			# plt.show()
-# 			plt.savefig(f'results/train/bias/10000/4mdn_{i}.png')
-# 			plt.close()
-# 		del env
+			# plt.show()
+			plt.savefig(f'results/train/bias/10000/4mdn_{i}.png')
+			plt.close()
+		del env
 
-# 	torch.save(network.state_dict(), 'results/train/bias/10000/mdn4.pt')
+	torch.save(network.state_dict(), 'results/train/bias/10000/mdn4.pt')
 
-# 	env_test = Fire(world_size=100, episodes=20)
-# 	x, y, intensity, fire_cluster, fire_cluster_means = env_test.generate_fire_data()
-# 	fire_means = []
-# 	for cluster in fire_cluster_means:
-# 		fire_means.append(np.mean(cluster, axis=0, dtype=np.int32))
+	env_test = Fire(world_size=100, episodes=20)
+	x, y, intensity, fire_cluster, fire_cluster_means = env_test.generate_fire_data()
+	fire_means = []
+	for cluster in fire_cluster_means:
+		fire_means.append(np.mean(cluster, axis=0, dtype=np.int32))
 
-# 	# min_max_scaler = MinMaxScaler()
-# 	# intensity = min_max_scaler.fit_transform(intensity.reshape(-1, 1)).reshape(-1)
+	# min_max_scaler = MinMaxScaler()
+	# intensity = min_max_scaler.fit_transform(intensity.reshape(-1, 1)).reshape(-1)
 
-# 	x_test = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1), intensity.reshape(-1, 1)], axis=1)
-# 	x_test = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1)], axis=1)
-# 	y_test = fire_cluster.reshape(-1, 1)
+	x_test = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1), intensity.reshape(-1, 1)], axis=1)
+	x_test = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1)], axis=1)
+	y_test = fire_cluster.reshape(-1, 1)
 
-# 	x_test = torch.tensor(x_test, dtype=torch.float32)
-# 	y_test = torch.tensor(y_test, dtype=torch.float32, requires_grad=False)
+	x_test = torch.tensor(x_test, dtype=torch.float32)
+	y_test = torch.tensor(y_test, dtype=torch.float32, requires_grad=False)
 
-# 	network.mu_bias = torch.tensor(np.array(fire_means), dtype=torch.float32)
-# 	pi, sigma, mu = network(x_test)
-# 	print('test loss: ', network.mdn_loss_fn(pi, sigma, mu, y_test).item())
+	network.mu_bias = torch.tensor(np.array(fire_means), dtype=torch.float32)
+	pi, sigma, mu = network(x_test)
+	print('test loss: ', network.mdn_loss_fn(pi, sigma, mu, y_test).item())
 
-# 	pi = pi.detach().numpy()
-# 	sigma = sigma.detach().numpy()
-# 	mu = mu.detach().numpy()
+	pi = pi.detach().numpy()
+	sigma = sigma.detach().numpy()
+	mu = mu.detach().numpy()
 
-# 	pi = np.argmax(pi, axis=1)
+	pi = np.argmax(pi, axis=1)
 
 	
-# 	fig, ax = plt.subplots(1, 2, figsize=(10, 10))
-# 	ax[0].scatter(x, y, c=pi, cmap='jet', s=10)
-# 	ax[1].scatter(x, y, c=fire_cluster, cmap='jet', s=10)
-# 	for i in range(len(fire_means)):
-# 		ax[1].scatter(fire_means[i][0], fire_means[i][1], marker='x', c='red', s=100)
+	fig, ax = plt.subplots(1, 2, figsize=(10, 10))
+	ax[0].scatter(x, y, c=pi, cmap='jet', s=10)
+	ax[1].scatter(x, y, c=fire_cluster, cmap='jet', s=10)
+	for i in range(len(fire_means)):
+		ax[1].scatter(fire_means[i][0], fire_means[i][1], marker='x', c='red', s=100)
 			
-# 	ax[0].set_title('prediction')
-# 	ax[1].set_title('ground truth')
-# 	plt.savefig(f'results/test/bias/10000/mdn_2.png')
-
-
-	# ----------------------------------------------------------------------
+	ax[0].set_title('prediction')
+	ax[1].set_title('ground truth')
+	plt.savefig(f'results/test/bias/10000/mdn_2.png')
 
 	# # Train MDN + GP model
 	# model_mdn = MDN_GP_Model_Spatiotemporal(x_train, y_train)

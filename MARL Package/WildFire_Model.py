@@ -110,6 +110,48 @@ class WildFire(object):
 
         return 1e3 * accumulated_intensity
 
+    # # fire intensity calculation for given point
+    # def find_point_fire_intensity(self, current_fire_spot=None, fire_models=None, deviation_min=9, deviation_max=11):
+    #     """
+    #     this function performs the fire intensity calculation according to [1] for each new fire front.
+
+    #     [1] http://www.cfs.nrcan.gc.ca/bookstore_pdfs/21396.pdf
+
+    #     :param current_fire_spot: the fire location for which the intensity is going to be computed
+    #     :param heat_source_spots: the fire source location close to the new fire spot
+    #     :param deviation_min: min of the radiation range
+    #     :param deviation_max: max of the radiation range
+    #     :return: fire intensity at the new fire spot location [W/m]
+    #     """
+
+    #     if current_fire_spot is None or fire_models is None:
+    #         raise ValueError(">>> Oops! Current fire location and included vicinity are required.")
+
+    #     x = current_fire_spot[0]
+    #     y = current_fire_spot[1]
+
+    #     x_dev = np.random.randint(low=deviation_min, high=deviation_max, size=(1, 1))[0][0] + np.random.normal()
+    #     y_dev = np.random.randint(low=deviation_min, high=deviation_max, size=(1, 1))[0][0] + np.random.normal()
+
+    #     if np.cos(self.flame_angle) == 0:
+    #         intensity_coeff = (259.833 * (self.flame_height ** 2.174)) / 1e3  # 1e3 is to change the unit to [MW/m]
+    #     else:
+    #         intensity_coeff = (259.833 * ((self.flame_height/np.cos(self.flame_angle)) ** 2.174)) / 1e3  # 1e3 is to change the unit to [MW/m]
+
+    #     intensity = []
+    #     for fire in fire_models:
+
+
+
+    #     for spot in heat_source_spots:
+    #         x_f = spot[0]
+    #         y_f = spot[1]
+    #         intensity.append((1 / (2 * np.pi * x_dev * y_dev)) *
+    #                          np.exp(-0.5 * ((((x - x_f) ** 2) / x_dev ** 2) + (((y - y_f) ** 2) / y_dev ** 2))))
+    #     accumulated_intensity = sum(intensity) * intensity_coeff
+
+    #     return 1e3 * accumulated_intensity
+
     # calculating the flame length as a function of fire intensity
     @staticmethod
     def fire_flame_length(accumulated_intensity=None):
