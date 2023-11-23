@@ -59,6 +59,7 @@ class Fire(object):
 		area_wind_directions = []
 		area_centers = []
 		num_firespots = []
+		self.fire_map = []
 
 		for i in range(self.fireAreas_Num):
 			area_centers.append([areas_x[i], areas_y[i]])
@@ -146,7 +147,7 @@ class Fire(object):
 				self.geo_phys_info.append(self.fire_mdl[i].geo_phys_info_init(max_fuel_coeff=fuel_coeff, avg_wind_speed=wind_speed,
 																			  avg_wind_direction=wind_direction))  # initialize geo-physical info
 			# initializing the fire-map
-			self.fire_map = []
+			# self.fire_map = []
 			for i in range(self.fireAreas_Num):
 				for j in range(len(self.ign_points_all[i])):
 					self.fire_map.append(self.ign_points_all[i][j])
@@ -210,51 +211,41 @@ class Fire(object):
 		means = self.ign_points_all.copy()
 		for _ in range(self.episodes):
 			self.fire_propagation()
-
+	
 		# return fire map: X,Y, Intensity, fire cluster number (index of fire_map)
 		return self.fire_map[:, 0], self.fire_map[:, 1], self.fire_map[:, 2], self.fire_map[:, 3], means
-	
 
-# class MDN_GP_Model_Spatiotemporal(gpytorch.models.ExactGP):
-# 	def __init__(self, x_train, y_train):
-# 		super(MDN_GP_Model_Spatiotemporal, self).__init__(x_train, y_train, gpytorch.likelihoods.GaussianLikelihood())
-# 		self.mean_module = gpytorch.means.ConstantMean()
-# 		self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
-		
-# 	def forward(self, x):
-# 		mean_x = self.mean_module(x)
-# 		covar_x = self.covar_module(x)
-# 		return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
-
+'''
 class MDN(nn.Module):
-	def __init__(self, n_hidden=20, n_gaussians=5, mu_bias=None):
+	def __init__(self, n_hidden=20, n_gaussians=5, n_input=3, mu_bias=None):
 		super(MDN, self).__init__()
 		self.neurons = n_hidden
 		self.components = n_gaussians
 		self.mu_bias = mu_bias
 		
 		# self.h1 = nn.Linear(2, n_hidden)	#if intensity is not in input
-		self.h1 = nn.Linear(3, n_hidden)	#if intensity is in input
+		self.h1 = nn.Linear(n_input, n_hidden)	#if intensity is in input
 		self.h2 = nn.Linear(n_hidden, n_hidden)
 		# self.h3 = nn.Linear(n_hidden, n_hidden)
-		
+	
 		self.alphas = nn.Linear(n_hidden, n_gaussians)
 		self.mus = nn.Linear(n_hidden, n_gaussians, bias=mu_bias)
 		self.sigmas = nn.Linear(n_hidden, n_gaussians)
 
 		self.ONEDIVSQRT2PI = 1.0 / np.sqrt(2.0*np.pi)
 
+		# self.pi = nn.Sequential(nn.Linear(n_input, n_gaussians*))
 
-		'''
-		Weight Regularization – 
-			Applying L1 or L2 regularization to the weights of the neurons which compute the mean, variances and mixing components.
-		Bias Initialization – 
-			If we precompute the possible centers of the two gaussians, we can initialize the bias of the \mu layers to these centers.
-			This has shown to have a strong effect in the separation of the two gaussian kernels/components during training.
-		'''
+		
+		# Weight Regularization – 
+		# 	Applying L1 or L2 regularization to the weights of the neurons which compute the mean, variances and mixing components.
+		# Bias Initialization – 
+		# 	If we precompute the possible centers of the two gaussians, we can initialize the bias of the \mu layers to these centers.
+		# 	This has shown to have a strong effect in the separation of the two gaussian kernels/components during training.
+		
 	
 	def forward(self, inputs):
-		x = F.relu(self.h1(inputs))
+		x = F.tanh(self.h1(inputs))
 		x = F.relu(self.h2(x))
 		# x = F.relu(self.h3(x))
 		
@@ -266,47 +257,28 @@ class MDN(nn.Module):
 		# use ELU for sigma
 		sigma = nn.ELU()(self.sigmas(x)) + 1 + 1e-15
 		
-		return pi, sigma, mu	
+		return pi, sigma, mu
 	
 	def gaussian_distribution(self, y, mu, sigma):
 		# make |mu|=K copies of y, subtract mu, divide by sigma
 		y = y.expand_as(sigma)
 		res = -torch.log(sigma) - 0.5 * torch.log(2 * torch.tensor(np.pi)) - 0.5 * torch.pow((y - mu) / sigma, 2)
+		# res = (self.ONEDIVSQRT2PI/sigma) * torch.exp((-0.5 * (y-mu)/sigma)**2)
 		return res
 
 	def mdn_loss_fn(self, y, mu, sigma, pi):
-		'''
-		use LogsumExp trick for numerical stability: https://en.wikipedia.org/wiki/LogSumExp
-		'''	
-		# result = -torch.log(sigma) - 0.5 * torch.log(2 * torch.tensor(np.pi)) - torch.pow(y - mu, 2) / (2 * torch.pow(sigma, 2))
-		# result = torch.logsumexp(torch.log(pi) + result, dim=1)
-
+		
+		# use LogsumExp trick for numerical stability: https://en.wikipedia.org/wiki/LogSumExp
+		
 		log_component_prob = self.gaussian_distribution(y, mu, sigma)
-		# log_mix_prob = torch.log(nn.functional.gumbel_softmax(pi, tau=1)) + 1e-15
+		log_mix_prob = torch.log(nn.functional.gumbel_softmax(pi, tau=1, dim=-1)) + 1e-15
 		# TODO: # add 1e-15 inside the torch.log(pi + 1e-15)
-		log_mix_prob = torch.log(pi + 1e-15)
+		# log_mix_prob = torch.log(pi + 1e-15)
 		# log_mix_prob = torch.log(pi) + 1e-15 
 
-		result = torch.logsumexp(log_component_prob + log_mix_prob, dim=-1)
-
-		# result = torch.logsumexp(torch.log(pi) + log_component_prob, dim=1)
-		
-		return -torch.mean(result)
-
-	# def mdn_loss_fn(self, y, mu, sigma, pi):
-	# 	# Compute the Gaussian log likelihood for each component
-	# 	dists = torch.distributions.Normal(mu, sigma)
-	# 	log_probs = dists.log_prob(y.unsqueeze(1).expand_as(mu))
-		
-	# 	# Compute the weighted sum of log probabilities
-	# 	weighted_log_probs = log_probs + torch.log(pi)
-	# 	max_log_probs, _ = torch.max(weighted_log_probs, dim=1)
-	# 	loss = -torch.log(torch.sum(torch.exp(weighted_log_probs - max_log_probs.unsqueeze(1)), dim=1)) - max_log_probs
-		
-	# 	return torch.mean(loss)
-
-
-		
+		result = torch.logsumexp(log_component_prob + log_mix_prob, dim=-1)		
+		return torch.mean(-result)
+	
 	def train_mdn(self, x_variable, y_variable, optimizer):
 		# for epoch in range(3001):
 		pi_variable, sigma_variable, mu_variable = network(x_variable)
@@ -324,9 +296,48 @@ class MDN(nn.Module):
 		# 	ax[1].scatter(x_variable[:,0].detach().numpy(), x_variable[:,1].detach().numpy(), c=y_variable[:,0].detach().numpy(), cmap='viridis', s=1)
 		# 	ax[0].set_title('prediction')
 		# 	ax[1].set_title('ground truth')
-		# 	plt.savefig(f'results/train/2GP/new_loss/low_loss_mdn_{i}.png')
+		# 	plt.savefig(f'results/train/2GP/new_mean/low_loss_mdn_{i}.png')
 		# 	plt.close()
 		# 	plt.show()
+'''
+
+class MDN(nn.Module):
+	def __init__(self, n_hidden=200, n_gaussians=2, n_input=1):
+		super(MDN, self).__init__()
+		self.z_h = nn.Sequential(
+			nn.Linear(n_input, n_hidden),
+			nn.Tanh()
+		)
+		self.z_pi = nn.Linear(n_hidden, n_gaussians)
+		self.z_mu = nn.Linear(n_hidden, n_gaussians)
+		self.z_sigma = nn.Linear(n_hidden, n_gaussians)
+	
+	def forward(self, x):
+		z_h = self.z_h(x)
+		pi = F.softmax(self.z_pi(z_h), -1)
+		mu = self.z_mu(z_h)
+		sigma = torch.exp(self.z_sigma(z_h))
+		return pi, mu, sigma
+
+	def gaussian_distribution(self, y, mu, sigma):
+		# make |mu|=K copies of y, subtract mu, divide by sigma
+		y = y.expand_as(sigma)
+		res = -torch.log(sigma) - 0.5 * torch.log(2 * torch.tensor(np.pi)) - 0.5 * torch.pow((y - mu) / sigma, 2)
+		# res = (self.ONEDIVSQRT2PI/sigma) * torch.exp((-0.5 * (y-mu)/sigma)**2)
+		return res
+	
+	def mdn_loss_fn(self, y, mu, sigma, pi):
+		
+		# use LogsumExp trick for numerical stability: https://en.wikipedia.org/wiki/LogSumExp
+		
+		log_component_prob = self.gaussian_distribution(y, mu, sigma)
+		log_mix_prob = torch.log(nn.functional.gumbel_softmax(pi, tau=1, dim=-1)) + 1e-15
+		# log_mix_prob = torch.log(pi + 1e-15)
+
+		result = torch.logsumexp(log_component_prob + log_mix_prob, dim=-1)		
+		return torch.mean(-result)
+	
+
 
 class BuildData():
 	def __init__(self, data_size=10000, world_size=250, episodes=10, fireAreas_Num=5):
@@ -349,6 +360,17 @@ class BuildData():
 		fire_means = []
 		for cluster in fire_cluster_means:
 			fire_means.append(np.mean(cluster, axis=0, dtype=np.int32))
+
+		# unique_cluster_num = np.unique(fire_cluster)
+		# print('fire shape:', fire_cluster.shape)
+		# fire_means1 = np.array(fire_means)
+		# print('fire means shape:', fire_means1.shape)
+		# for i in range(fire_cluster.shape[0]):
+		# 	for j in range(len(unique_cluster_num)):
+		# 		if fire_cluster[i] == unique_cluster_num[j]:
+		# 			# print(means[j])
+		# 			fire_cluster[i] = fire_means1[j]
+
 		
 		x_train = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1), intensity.reshape(-1, 1)], axis=1)	#with intensity
 		# x_train = np.concatenate([x.reshape(-1, 1), y.reshape(-1, 1)], axis=1)	#without intensity
@@ -393,90 +415,208 @@ def collate_fn(batch):
 
 	return x_train, y_train
 
+# if __name__ == '__main__':
+# 	network = MDN(n_hidden=20, n_gaussians=2)
+# 	optimizer = torch.optim.Adam(network.parameters(), lr=0.00001, weight_decay=1e-4)
+
+# 	train_dataset = BuildData(data_size=1000, world_size=100, episodes=10, fireAreas_Num=2)
+# 	train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=64) #, collate_fn=collate_fn)
+# 	batch_size = 32
+# 	n_epochs = 1000
+# 	for i in tqdm(range(n_epochs)):
+# 		for x_train, y_train, fire_means  in train_dataloader:
+# 			# x_train, y_train = batch
+# 			# print(x_train.shape, y_train.shape)
+			
+# 			# network.mu_bias = fire_means
+# 			network.train_mdn(x_train, y_train, optimizer)
+# 			pi, sigma, mu = network(x_train)
+
+# 			with open('results/train/2GP/new_mean/loss.txt', 'a') as f:
+# 				f.write(str(network.mdn_loss_fn(y_train, mu, sigma, pi).item())+'\n')
+
+# 			pi = pi.detach().numpy()
+# 			sigma = sigma.detach().numpy()
+# 			mu = mu.detach().numpy()
+# 			# print('means', mu)
+# 			# print('sigma', sigma)
+# 			pi1 = np.max(pi, axis=2)
+# 			pi2 = np.argmax(pi, axis=2)
+# 			# print('alphas', pi)
+
+# 			# mu1 = mu[np.indices(pi2.shape)[0], pi2]
+# 			# result = array2[np.arange(32)[:, np.newaxis], np.arange(550), argmax_indices]
+# 			# print(pi1.shape, pi2.shape)
+# 			mu1 = mu[np.arange(pi1.shape[0])[:, np.newaxis], np.arange(pi1.shape[1]), pi2]
+# 			# mu1 = mu[:, pi2]
+# 			sigma1 = sigma[np.indices(pi2.shape)[0], pi2]
+
+# 			# print(pi2.shape, pi.shape, pi1.shape, mu1.shape, mu.shape)
+
+# 			if i%10 == 0:
+# 				fig, ax = plt.subplots(1, 3, figsize=(45,10))
+# 				fig.colorbar(
+#         						ax[0].scatter(
+# 									x_train[5][:,0].detach().numpy(),
+# 									x_train[5][:,1].detach().numpy(),
+# 									c=pi2[5],
+# 									cmap='jet',
+# 									s=5
+# 								),
+# 								ax = ax[0]
+# 							)
+# 				fig.colorbar(
+#         						ax[1].scatter(
+# 									x_train[5][:,0].detach().numpy(),
+# 									x_train[5][:,1].detach().numpy(),
+# 									c=mu1[5],
+# 									cmap='jet',
+# 									s=5
+# 								),
+# 								ax=ax[1]
+#        						)
+# 				ax[2].scatter(
+# 								x_train[5][:,0].detach().numpy(),
+# 				  				x_train[5][:,1].detach().numpy(),
+# 					  			c=y_train[5][:,0].detach().numpy(),
+# 						 		cmap='jet',
+# 						   		s=5
+# 							)
+# 				ax[0].set_title('highest confidence alpha')
+# 				ax[1].set_title('prediction mean')
+# 				ax[2].set_title('ground truth')
+# 				plt.tight_layout()
+# 				plt.savefig(f'results/train/2GP/new_mean/mdn_{i}.png')
+# 				plt.close()
+
+# 				# fig, ax = plt.subplots(1, 2, figsize=(20, 10))
+# 				# ax[0].scatter(x_train[:,0].detach().numpy(), x_train[:,1].detach().numpy(), c=pi1, cmap='jet', s=1)
+# 				# ax[1].scatter(x_train[:,0].detach().numpy(), x_train[:,1].detach().numpy(), c=y_train[:,0].detach().numpy(), cmap='viridis', s=1)
+# 				# ax[0].set_title('prediction')
+# 				# ax[1].set_title('ground truth')
+# 				# plt.savefig(f'results/train/2GP/new_mean/low_loss_mdn_{i}.png')
+# 				# plt.close()
+			
+
+# 				torch.save(network.state_dict(), f'results/train/2GP/new_mean/mdn_{i}.pt')
+
+
+# 	torch.save(network.state_dict(), f'results/train/2GP/new_mean/mdn_final.pt')
+
+
+# testing if MDN is working on simple data
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+import seaborn as sns
+import matplotlib.patches as mpatches
+
+
+def remove_ax_window(ax):
+	"""
+		Remove all axes and tick params in pyplot.
+		Input: ax object.
+	"""
+	ax.spines["top"].set_visible(False)
+	ax.spines["bottom"].set_visible(False)
+	ax.spines["right"].set_visible(False)
+	ax.spines["left"].set_visible(False)
+	ax.tick_params(axis=u'both', which=u'both',length=0)
+
 if __name__ == '__main__':
-	network = MDN(n_hidden=20, n_gaussians=2)
-	optimizer = torch.optim.Adam(network.parameters(), lr=0.00001, weight_decay=1e-4)
+	samples = int(1e5)
+	dpi = 140
+	x_size = 8
+	y_size = 4
+	alt_font_size = 14
+	n_input = 1
 
-	train_dataset = BuildData(data_size=1000, world_size=100, episodes=10, fireAreas_Num=2)
-	train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=64) #, collate_fn=collate_fn)
-	batch_size = 32
-	n_epochs = 1000
-	for i in tqdm(range(n_epochs)):
-		for x_train, y_train, fire_means  in train_dataloader:
-			# x_train, y_train = batch
-			# print(x_train.shape, y_train.shape)
-			
-			network.mu_bias = fire_means
-			network.train_mdn(x_train, y_train, optimizer)
-			pi, sigma, mu = network(x_train)
+	x_data = np.float32(np.random.uniform(-10, 10, (1, samples)))
+	r_data = np.array([np.random.normal(scale=np.abs(i)) for i in x_data])
+	y_data = np.float32(np.square(x_data)+r_data*2.0)
 
-			with open('results/train/2GP/new_loss/loss.txt', 'a') as f:
-				f.write(str(network.mdn_loss_fn(y_train, mu, sigma, pi).item())+'\n')
+	x_data2 = np.float32(np.random.uniform(-10, 10, (1, samples)))
+	r_data2 = np.array([np.random.normal(scale=np.abs(i)) for i in x_data2])
+	y_data2 = np.float32(-np.square(x_data2)+r_data2*2.0)
 
-			pi = pi.detach().numpy()
-			sigma = sigma.detach().numpy()
-			mu = mu.detach().numpy()
-			# print('means', mu)
-			# print('sigma', sigma)
-			pi1 = np.max(pi, axis=2)
-			pi2 = np.argmax(pi, axis=2)
-			# print('alphas', pi)
+	x_data = np.concatenate((x_data,x_data2),axis=1).T
+	y_data = np.concatenate((y_data,y_data2),axis=1).T
 
-			# mu1 = mu[np.indices(pi2.shape)[0], pi2]
-			# result = array2[np.arange(32)[:, np.newaxis], np.arange(550), argmax_indices]
-			# print(pi1.shape, pi2.shape)
-			mu1 = mu[np.arange(pi1.shape[0])[:, np.newaxis], np.arange(pi1.shape[1]), pi2]
-			# mu1 = mu[:, pi2]
-			sigma1 = sigma[np.indices(pi2.shape)[0], pi2]
+	min_max_scaler = MinMaxScaler()
+	y_data = min_max_scaler.fit_transform(y_data)
 
-			# print(pi2.shape, pi.shape, pi1.shape, mu1.shape, mu.shape)
+	x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=0.2, random_state=42, shuffle=True)
 
-			if i%10 == 0:
-				fig, ax = plt.subplots(1, 3, figsize=(45,10))
-				fig.colorbar(
-        						ax[0].scatter(
-									x_train[5][:,0].detach().numpy(),
-									x_train[5][:,1].detach().numpy(),
-									c=pi2[5],
-									cmap='jet',
-									s=1
-								),
-								ax = ax[0]
-							)
-				fig.colorbar(
-        						ax[1].scatter(
-									x_train[5][:,0].detach().numpy(),
-									x_train[5][:,1].detach().numpy(),
-									c=mu1[5],
-									cmap='jet',
-									s=1
-								),
-								ax=ax[1]
-       						)
-				ax[2].scatter(
-								x_train[5][:,0].detach().numpy(),
-				  				x_train[5][:,1].detach().numpy(),
-					  			c=y_train[5][:,0].detach().numpy(),
-						 		cmap='viridis',
-						   		s=1
-							)
-				ax[0].set_title('highest confidence alpha')
-				ax[1].set_title('prediction mean')
-				ax[2].set_title('ground truth')
-				plt.tight_layout()
-				plt.savefig(f'results/train/2GP/new_loss/mdn_{i}.png')
-				plt.close()
+	# fig = plt.figure(figsize=(x_size,y_size), dpi=dpi)
+	# ax = plt.gca()
 
-				# fig, ax = plt.subplots(1, 2, figsize=(20, 10))
-				# ax[0].scatter(x_train[:,0].detach().numpy(), x_train[:,1].detach().numpy(), c=pi1, cmap='jet', s=1)
-				# ax[1].scatter(x_train[:,0].detach().numpy(), x_train[:,1].detach().numpy(), c=y_train[:,0].detach().numpy(), cmap='viridis', s=1)
-				# ax[0].set_title('prediction')
-				# ax[1].set_title('ground truth')
-				# plt.savefig(f'results/train/2GP/new_loss/low_loss_mdn_{i}.png')
-				# plt.close()
-			
+	# ax.set_title(r"$y = \pm x^2 + \epsilon$"+"\n"+r"$\epsilon\backsim\mathcal{N}(0,|x|)$", fontsize=alt_font_size)
+	# ax.plot(x_train,y_train, "x",alpha=1., color=sns.color_palette()[0])
 
-				torch.save(network.state_dict(), f'results/train/2GP/new_loss/mdn_{i}.pt')
+	# remove_ax_window(ax)
+	# plt.show()
 
+	components = 2
+	neurons = 200
 
-	torch.save(network.state_dict(), f'results/train/2GP/new_loss/mdn_final.pt')
+	print('training...')
+	network = MDN(n_hidden=neurons, n_gaussians=components, n_input=n_input)
+	optimizer = torch.optim.Adam(network.parameters(), lr=1e-3, weight_decay=1e-4)
+	
+	x_train = torch.from_numpy(x_train)
+	y_train = torch.from_numpy(y_train)
+	x_test = torch.from_numpy(x_test)
+	y_test = torch.from_numpy(y_test)
+
+	for i in tqdm(range(100)):
+		# network.train_mdn(x_train, y_train, optimizer)
+		# pi, sigma, mu = network(x_train)
+		# print(f'loss: {network.mdn_loss_fn(y_train, mu, sigma, pi).item()}')
+		pi, mu, sigma = network(x_train)
+		loss = network.mdn_loss_fn(y_train, mu, sigma, pi)
+		optimizer.zero_grad()
+		loss.backward()
+		optimizer.step()
+
+		# if i%20 == 0:
+		# 	print(loss.data.tolist())
+
+	s = np.linspace(-10,10,int(x_test.shape[0]))[:, np.newaxis].astype(np.float32)
+
+	pi, sigma, mu = network(x_test)
+
+	pi = pi.detach().numpy()
+	sigma = sigma.detach().numpy()
+	mu = mu.detach().numpy()
+
+	fig = plt.figure(figsize=(x_size,y_size), dpi=dpi)
+	ax = plt.gca()
+
+	ax.set_title(r"$y = \pm x^2 + \epsilon$"+"\n"+r"$\epsilon\backsim\mathcal{N}(0,|x|)$", fontsize=alt_font_size)
+	ax.plot(x_train,y_train, "x",alpha=0.5, color=sns.color_palette()[0])
+	
+	for mx in range(components):
+		# print(s.shape, mu[:,mx].shape)
+		ax.scatter(x_test, mu[:,mx], color=sns.color_palette()[1+mx])
+		# plt.plot(x_test, y_test, color=sns.color_palette()[1+mx], linewidth=5, linestyle='-', markersize=3)
+		# plt.plot(s,mu[:,mx]-sigma[:,mx], color=sns.color_palette()[1+mx],linewidth=3, linestyle='--', markersize=3)
+		# plt.plot(s,mu[:,mx]+sigma[:,mx], color=sns.color_palette()[1+mx],linewidth=3, linestyle='--', markersize=3)
+
+	remove_ax_window(ax)
+
+	data_leg = mpatches.Patch(color=sns.color_palette()[0])
+	data_mdn1 = mpatches.Patch(color=sns.color_palette()[1])
+	data_mdn2 = mpatches.Patch(color=sns.color_palette()[2])
+
+	ax.legend(handles = [data_leg, data_mdn1, data_mdn2],
+			labels = ["Data", "MDN (c=1)", "MDN (c=2)"],
+			loc=9, borderaxespad=0.1, framealpha=1.0, fancybox=True,
+			bbox_to_anchor=(0.5, -0.05), ncol=6, shadow=True, frameon=False,
+			fontsize=alt_font_size)
+
+	plt.tight_layout()
+
+	# if save_figure:
+	# 	plt.savefig("graphics/mdn_nonlinear_prediction.png", format='png',dpi=dpi, bbox_inches='tight')
+
+	plt.show()
+

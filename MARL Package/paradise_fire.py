@@ -1,41 +1,74 @@
 import vtk
+import numpy as np
+import matplotlib.pyplot as plt
 
-# Create a reader for your .vtk file
-reader = vtk.vtkUnstructuredGridReader()
-reader.SetFileName("../paradise_data/change_64x64x128_0000000100.vtk")
-reader.Update()
+vtk_file_path = '../../paradise_data/change_64x64x128_0000000100.vtk'
 
-ren = vtk.vtkRenderer()
-renWin = vtk.vtkRenderWindow()
-renWin.AddRenderer(ren)
-iren = vtk.vtkRenderWindowInteractor()
-iren.SetRenderWindow(renWin)
+# Create a generic data object reader
+reader = vtk.vtkGenericDataObjectReader()
+reader.SetFileName(vtk_file_path)
 
-arrow = vtk.vtkArrowSource()
-arrow.SetTipResolution(16)
-arrow.SetTipLength(0.3)
-arrow.SetTipRadius(0.1)
+# Try updating the reader
+try:
+    reader.Update()
+except RuntimeError as e:
+    print(f"Error reading VTK file: {str(e)}")
+    exit()
 
-glyph = vtk.vtkGlyph3D()
-glyph.SetSourceConnection(arrow.GetOutputPort())
-glyph.SetInputConnection(reader.GetOutputPort())
-glyph.SetVectorModeToUseVector()
-glyph.SetScaleFactor(1.0)
+# Get the output data object
+data_object = reader.GetOutput()
 
-mapper = vtk.vtkPolyDataMapper()
-mapper.SetInputConnection(glyph.GetOutputPort())
+# Check if the data object is loaded correctly
+if data_object is None:
+    print("Error: Data object is None. Check if the file contains valid VTK data.")
+    exit()
 
-actor = vtk.vtkActor()
-actor.SetMapper(mapper)
+# Get information about the data object
+class_name = data_object.GetClassName()
+print("Class Name:", class_name)
+    
 
-ren.AddActor(actor)
+# # Read the .vtk file
+# reader = vtk.vtkArrayReader()
+# reader.SetFileName(vtk_file_path)
+# reader.Update()
+# # print('reader updated', reader)
+# # Get the data set from the reader
+# data_set = reader.GetOutput()
 
-ren.SetBackground(0.1, 0.1, 0.1)  # Set background color
-renWin.SetSize(800, 600)  # Set window size
-ren.GetActiveCamera().Azimuth(30)  # Set camera position
-ren.GetActiveCamera().Elevation(30)
-ren.ResetCamera()
+# # Get the number of points in the data set
+# num_points = data_set.GetNumberOfPoints()
 
-iren.Initialize()
-renWin.Render()
-iren.Start()
+# # Get the point data from the data set
+# point_data = data_set.GetPointData()
+
+# print(point_data)
+
+# if point_data:
+#     # Get arrays for wind velocity (u, v, w) and temperature (t)
+#     u_array = point_data.GetArray("u")
+#     v_array = point_data.GetArray("v")
+#     w_array = point_data.GetArray("w")
+#     t_array = point_data.GetArray("t")
+
+#     if u_array and v_array and w_array and t_array:
+#         for point_id in range(num_points):
+#             # Get coordinate point (i, j, k) for each point
+#             point = data_set.GetPoint(point_id)
+#             i, j, k = point
+
+#             # Extract data at the point
+#             u = u_array.GetTuple1(point_id)
+#             v = v_array.GetTuple1(point_id)
+#             w = w_array.GetTuple1(point_id)
+#             t = t_array.GetTuple1(point_id)
+
+#             print(f"Point ({i}, {j}, {k}) - Wind (u, v, w): ({u}, {v}, {w}), Temperature (t): {t}")
+#     else:
+#         print("Missing required arrays (u, v, w, t) in the VTK file.")
+
+# else:
+#     print("No point data found in the VTK file.")
+
+# print("\n")
+
