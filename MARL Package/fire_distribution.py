@@ -281,7 +281,7 @@ class Fire(object):
         if (
             self.fire_info[1][9] == 0
         ):  # when using "uniform" fire setting (all fire areas use the same parameters)
-            self.new_fire_front, current_geo_phys_info = self.fire_mdl.fire_propagation( # type: ignore
+            self.new_fire_front, current_geo_phys_info = self.fire_mdl.fire_propagation(  # type: ignore
                 self.world_size,
                 ign_points_all=self.ign_points_all,
                 geo_phys_info=self.geo_phys_info,
@@ -295,10 +295,12 @@ class Fire(object):
                 (
                     self.new_fire_front_temp[i],
                     self.current_geo_phys_info[i],
-                ) = self.fire_mdl[i].fire_propagation( # type: ignore
+                ) = self.fire_mdl[
+                    i
+                ].fire_propagation(  # type: ignore
                     self.world_size,
                     ign_points_all=self.ign_points_all[i],
-                    geo_phys_info=self.geo_phys_info[i], # type: ignore
+                    geo_phys_info=self.geo_phys_info[i],  # type: ignore
                     previous_terrain_map=self.previous_terrain_map[i],
                     pruned_List=self.pruned_List,
                 )
@@ -392,7 +394,7 @@ class Fire(object):
 
         return field_intensity
 
-    def generate_fire_data(self, key="gpytorch"):
+    def generate_fire_data(self, key="gpytorch", data_id=1):
         # print('Generating fire data...')
         X = []
         Y = []
@@ -401,14 +403,15 @@ class Fire(object):
         time_stamp = []
         self.fire_init()
         means = self.ign_points_all.copy()
+        fire_data_for_RNP = []
         for i in range(self.episodes):
             self.fire_propagation()
             # print(self.fire_map[:, 0], self.fire_map[:, 0].shape)
-            X.extend(self.fire_map[:, 0]) # type: ignore
-            Y.extend(self.fire_map[:, 1]) # type: ignore
-            intensity.extend(self.fire_map[:, 2]) # type: ignore
-            fire_cluster_id.extend(self.fire_map[:, 3]) # type: ignore
-            time_stamp.extend(np.ones(self.fire_map.shape[0]) * i) # type: ignore
+            X.extend(self.fire_map[:, 0])  # type: ignore
+            Y.extend(self.fire_map[:, 1])  # type: ignore
+            intensity.extend(self.fire_map[:, 2])  # type: ignore
+            fire_cluster_id.extend(self.fire_map[:, 3])  # type: ignore
+            time_stamp.extend(np.ones(self.fire_map.shape[0]) * i)  # type: ignore
 
             # start_time = time.time()
             # gaussian_map, model = create_gaussian_map(X, Y, intensity, world_size)
@@ -421,35 +424,36 @@ class Fire(object):
                     yy = []
                     ii = []
                     field_intensity = self.calc_fire_intensity_in_field(self.fire_map)
-                    for m in range(field_intensity.shape[0]):
-                        for n in range(field_intensity.shape[1]):
-                            if field_intensity[m][n] != 0:
-                                xx.append(m)
-                                yy.append(n)
-                                ii.append(field_intensity[m][n])
+                    fire_data_for_RNP.append(field_intensity)
+                    # for m in range(field_intensity.shape[0]):
+                    #     for n in range(field_intensity.shape[1]):
+                    #         if field_intensity[m][n] != 0:
+                    #             xx.append(m)
+                    #             yy.append(n)
+                    #             ii.append(field_intensity[m][n])
 
-                    fig, ax = plt.subplots(1, 2, figsize=(30, 15))
-                    fig.colorbar(
-                        ax[0].scatter(
-                            np.array(Y), np.array(X), c=intensity, cmap="viridis"
-                        ),
-                        ax=ax[0],
-                    )
-                    fig.colorbar(
-                        ax[1].scatter(
-                            np.array(yy), np.array(xx), c=np.array(ii), cmap="viridis"
-                        ),
-                        ax=ax[1],
-                    )
+                    # fig, ax = plt.subplots(1, 2, figsize=(30, 15))
+                    # fig.colorbar(
+                    #     ax[0].scatter(
+                    #         np.array(Y), np.array(X), c=intensity, cmap="viridis"
+                    #     ),
+                    #     ax=ax[0],
+                    # )
+                    # fig.colorbar(
+                    #     ax[1].scatter(
+                    #         np.array(yy), np.array(xx), c=np.array(ii), cmap="viridis"
+                    #     ),
+                    #     ax=ax[1],
+                    # )
 
-                    for a in ax:
-                        a.set_xlim(0, self.world_size)
-                        a.set_ylim(0, self.world_size)
+                    # for a in ax:
+                    #     a.set_xlim(0, self.world_size)
+                    #     a.set_ylim(0, self.world_size)
 
-                    plt.title("2D fire intensity map by interpolation")
-                    plt.savefig(f"gp_fire_img/interp/episode_{i//1}.png")
-                    plt.close()
-                    print(f"saved episode {i//1} image")
+                    # plt.title("2D fire intensity map by interpolation")
+                    # plt.savefig(f"gp_fire_img/interp/episode_{i//1}.png")
+                    # plt.close()
+                    # print(f"saved episode {i//1} image")
 
                 # fig, ax = plt.subplots(1, 2, figsize=(30, 15), sharey=True, gridspec_kw={'width_ratios': [1, 1]})
                 # fig.colorbar(ax[0].scatter(np.array(Y), np.array(X), c=intensity, cmap='viridis'), ax=ax[0])
@@ -634,6 +638,10 @@ class Fire(object):
                     del self.gp_mixture
                 # '''
 
+        fire_data_for_RNP = np.array(fire_data_for_RNP)
+        np.save(f"gp_fire_img/interp/data/fire_{data_id}.npy", fire_data_for_RNP)
+        print(f'saved fire {data_id}')
+
         # return fire map: X,Y, Intensity, time, fire cluster number (index of fire_map)
         # return self.fire_map[:, 0], self.fire_map[:, 1], self.fire_map[:, 2], self.fire_map[:, 3], means
         X = np.array(X)
@@ -655,10 +663,10 @@ class Fire(object):
 if __name__ == "__main__":
     world_size = 100
     fireAreas_Num = 1
-    episodes = 500
+    episodes = 8
 
     env_list = []
-    data_size = 1
+    data_size = 500
 
     # pool = Pool(multiprocessing.cpu_count()-10)
 
@@ -670,7 +678,8 @@ if __name__ == "__main__":
             world_size=world_size, episodes=episodes, fireAreas_Num=fireAreas_Num
         )
         X, Y, intensity, fire_cluster_id, time_stamp, means = env.generate_fire_data(
-            key="interp"
+            key="interp",
+            data_id = i
         )
         # time_env = time.time() - start_time
         # print("env created ", time_env)
